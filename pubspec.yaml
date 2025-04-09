@@ -1,0 +1,34 @@
+name: dreamflow
+description: "A DreamFlow project"
+publish_to: 'none'
+version: 1.0.0
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.0
+  fl_chart: 0.68.0
+  google_fonts: 6.1.0
+  shared_preferences: 2.3.2
+  path_provider: 2.1.4
+  provider: 6.1.2
+  http: '>=1.0.0'
+  uuid: '>=4.3.0'
+  flutter_slidable: ^3.0.0
+  intl: ^0.18.1
+  printing: ^5.11.1
+  
+  supabase_flutter: ^2.7.0  
+  pdf: ^3.10.7
+  share_plus: ^7.2.2
+  
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true
