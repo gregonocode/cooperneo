@@ -1,0 +1,7 @@
+{
+    "name": "dreamflow",
+    "version": "1.0.0",
+    "scripts": {
+      "build": "flutter pub get && flutter build web --release"
+    }
+  }
