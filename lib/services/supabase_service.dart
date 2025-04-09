@@ -14,9 +14,8 @@ class SupabaseService {
     try {
       print('Buscando fórmulas no Supabase...');
       final response = await _client.from('formulas').select();
-      final formulasList = response
-          .map((item) => Formula.fromJson(item as Map<String, dynamic>))
-          .toList();
+      final formulasList =
+          response.map((item) => Formula.fromJson(item)).toList();
       print('Fórmulas mapeadas: $formulasList');
       return formulasList;
     } catch (e) {
