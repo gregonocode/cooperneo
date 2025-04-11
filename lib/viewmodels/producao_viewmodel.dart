@@ -28,18 +28,42 @@ class ProducaoViewModel extends ChangeNotifier {
   }
 
   Future<void> carregarDados() async {
-    _isLoading = true;
-    notifyListeners();
-
     try {
+      _isLoading = true;
+      notifyListeners();
+
+      // Carregar fórmulas
+      print('Carregando fórmulas...');
       _formulas = await _supabaseService.fetchFormulas();
-      _producoes = await _supabaseService.getProducoes();
+      print('Fórmulas carregadas: ${_formulas.length}');
+      print('Fórmulas disponíveis: ${_formulas.map((f) => f.id).toList()}');
+
+      // Carregar produções (continua mesmo com erro)
+      try {
+        print('Carregando produções...');
+        _producoes = await _supabaseService.getProducoes();
+        print('Produções carregadas: ${_producoes.length}');
+        print('Produções disponíveis: ${_producoes.map((p) => p.id).toList()}');
+      } catch (e) {
+        print('Erro ao carregar produções: $e');
+        _errorMessage = 'Erro ao carregar produções: $e';
+        // Não interrompe o carregamento das matérias-primas
+      }
+
+      // Carregar matérias-primas (sempre executa)
+      print('Carregando matérias-primas...');
       _materiasPrimas = await _supabaseService.fetchMateriasPrimas();
-      _errorMessage = null;
-    } catch (e) {
-      _errorMessage = 'Erro ao carregar dados: $e';
-    } finally {
+      print('Matérias-primas carregadas: ${_materiasPrimas.length}');
+      print(
+          'Matérias-primas disponíveis: ${_materiasPrimas.map((mp) => mp.id).toList()}');
+
       _isLoading = false;
+      _errorMessage = null;
+      notifyListeners();
+    } catch (e) {
+      _isLoading = false;
+      _errorMessage = 'Erro ao carregar dados: $e';
+      print('Erro em carregarDados: $_errorMessage');
       notifyListeners();
     }
   }
@@ -127,7 +151,7 @@ class ProducaoViewModel extends ChangeNotifier {
   Future<bool> atualizarFormula({
     required String id,
     required String nome,
-    String? descricao, // Alterado de String para String?
+    String? descricao,
     required List<ComponenteFormula> componentes,
   }) async {
     print(
@@ -135,8 +159,7 @@ class ProducaoViewModel extends ChangeNotifier {
     try {
       final success = await _supabaseService.updateFormula(id, {
         'nome': nome,
-        if (descricao != null)
-          'descricao': descricao, // Só inclui se não for null
+        if (descricao != null) 'descricao': descricao,
         'componentes': componentes.map((c) => c.toJson()).toList(),
       });
       if (success) {
@@ -176,11 +199,19 @@ class ProducaoViewModel extends ChangeNotifier {
 
   Future<bool> registrarProducao(
       String formulaId, double quantidadeProduzida, String loteProducao) async {
+    print(
+        'Iniciando registrarProducao: formulaId=$formulaId, quantidade=$quantidadeProduzida, lote=$loteProducao');
     try {
+      print('Recarregando dados antes de processar a produção...');
+      await carregarDados();
+      print(
+          'Matérias-primas disponíveis após carregarDados: ${_materiasPrimas.map((mp) => mp.id).toList()}');
+
       final formula = getFormulaPorId(formulaId);
       if (formula == null) {
-        throw Exception('Fórmula não encontrada');
+        throw Exception('Fórmula não encontrada: $formulaId');
       }
+      print('Fórmula encontrada: ${formula.nome}');
 
       Map<String, double> materiaPrimaConsumida = {};
       for (var componente in formula.componentes) {
@@ -189,6 +220,8 @@ class ProducaoViewModel extends ChangeNotifier {
           throw Exception(
               'Matéria-prima não encontrada: ${componente.materiaPrimaId}');
         }
+        print(
+            'Matéria-prima encontrada: ${materiaPrima.nome}, ID: ${materiaPrima.id}');
 
         double quantidadeConsumida =
             componente.quantidade * quantidadeProduzida;
@@ -205,11 +238,15 @@ class ProducaoViewModel extends ChangeNotifier {
             materiaPrima.unidadeMedida == 'mL') {
           quantidadeConsumida *= 1000;
         }
+        print(
+            'Quantidade consumida calculada: $quantidadeConsumida para ${materiaPrima.nome}');
 
         double estoqueAtual = materiaPrima.estoqueAtual;
         if (estoqueAtual < quantidadeConsumida) {
-          throw Exception('Estoque insuficiente para ${materiaPrima.nome}');
+          throw Exception(
+              'Estoque insuficiente para ${materiaPrima.nome}: $estoqueAtual < $quantidadeConsumida');
         }
+        print('Estoque suficiente: $estoqueAtual >= $quantidadeConsumida');
 
         materiaPrimaConsumida[materiaPrima.id] = quantidadeConsumida;
       }
@@ -219,34 +256,41 @@ class ProducaoViewModel extends ChangeNotifier {
         final quantidadeConsumida = entry.value;
         final materiaPrima = _materiasPrimas.firstWhere(
           (mp) => mp.id == entry.key,
-          orElse: () => throw Exception('Matéria-prima não encontrada'),
+          orElse: () => throw Exception(
+              'Matéria-prima não encontrada ao atualizar estoque: ${entry.key}'),
         );
-
+        print(
+            'Atualizando estoque de ${materiaPrima.nome}: ${materiaPrima.estoqueAtual} - $quantidadeConsumida');
         await _supabaseService.updateMateriaPrima(
           materiaPrimaId,
           {'estoque_atual': materiaPrima.estoqueAtual - quantidadeConsumida},
         );
+        print('Estoque atualizado para ${materiaPrima.nome}');
       }
 
       final producao = Producao(
-        id: '', // O ID será gerado pelo Supabase
+        id: '',
         formulaId: formulaId,
         quantidadeProduzida: quantidadeProduzida,
         loteProducao: loteProducao,
         materiaPrimaConsumida: materiaPrimaConsumida,
         dataProducao: DateTime.now(),
       );
+      print('Produção criada: $producao');
 
       final success = await _supabaseService.saveProducao(producao);
       if (success) {
+        print('Produção registrada com sucesso');
         await carregarDados();
         return true;
       }
-      _errorMessage = 'Erro ao registrar produção';
+      _errorMessage = 'Erro ao salvar produção no Supabase';
+      print('Erro: $_errorMessage');
       notifyListeners();
       return false;
     } catch (e) {
       _errorMessage = 'Erro ao registrar produção: $e';
+      print('Erro capturado: $_errorMessage');
       notifyListeners();
       return false;
     }

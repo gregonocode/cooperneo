@@ -624,7 +624,6 @@ class _ProducaoScreenState extends State<ProducaoScreen>
     double quantidade = 0;
     double? _simulacaoQuantidade;
 
-    // Verificar se há fórmulas cadastradas
     if (producaoViewModel.formulas.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -637,9 +636,9 @@ class _ProducaoScreenState extends State<ProducaoScreen>
 
     showDialog(
       context: context,
-      builder: (context) {
+      builder: (dialogContext) {
         return StatefulBuilder(
-          builder: (context, setState) {
+          builder: (builderContext, setState) {
             final formula = producaoViewModel.getFormulaPorId(formulaId);
             final Map<String, double> disponibilidade =
                 _simulacaoQuantidade != null && formula != null
@@ -656,9 +655,7 @@ class _ProducaoScreenState extends State<ProducaoScreen>
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       DropdownButtonFormField<String>(
-                        decoration: const InputDecoration(
-                          labelText: 'Fórmula',
-                        ),
+                        decoration: const InputDecoration(labelText: 'Fórmula'),
                         value: formulaId,
                         items: producaoViewModel.formulas.map((f) {
                           return DropdownMenuItem<String>(
@@ -669,7 +666,7 @@ class _ProducaoScreenState extends State<ProducaoScreen>
                         }).toList(),
                         onChanged: (value) {
                           setState(() {
-                            formulaId = value!;
+                            formulaId = value ?? '';
                             _simulacaoQuantidade = null;
                           });
                         },
@@ -677,21 +674,19 @@ class _ProducaoScreenState extends State<ProducaoScreen>
                       const SizedBox(height: 16),
                       TextFormField(
                         decoration: const InputDecoration(
-                          labelText: 'Lote de Produção',
-                        ),
+                            labelText: 'Lote de Produção'),
                         validator: (value) {
                           if (value == null || value.isEmpty) {
                             return 'Por favor, informe o lote';
                           }
                           return null;
                         },
-                        onSaved: (value) => loteProducao = value!,
+                        onSaved: (value) => loteProducao = value ?? '',
                       ),
                       const SizedBox(height: 16),
                       TextFormField(
                         decoration: const InputDecoration(
-                          labelText: 'Quantidade a Produzir (kg)',
-                        ),
+                            labelText: 'Quantidade a Produzir (kg)'),
                         keyboardType: const TextInputType.numberWithOptions(
                             decimal: true),
                         validator: (value) {
@@ -709,27 +704,22 @@ class _ProducaoScreenState extends State<ProducaoScreen>
                         onSaved: (value) => quantidade = double.parse(value!),
                         onChanged: (value) {
                           final valorNumerico = double.tryParse(value);
-                          if (valorNumerico != null && valorNumerico > 0) {
-                            setState(() {
-                              _simulacaoQuantidade = valorNumerico;
-                            });
-                          } else {
-                            setState(() {
-                              _simulacaoQuantidade = null;
-                            });
-                          }
+                          setState(() {
+                            _simulacaoQuantidade =
+                                valorNumerico != null && valorNumerico > 0
+                                    ? valorNumerico
+                                    : null;
+                          });
                         },
                       ),
                       if (_simulacaoQuantidade != null && formula != null) ...[
                         const SizedBox(height: 24),
-                        Text(
-                          'Previsão de Consumo',
-                          style: Theme.of(context).textTheme.titleSmall,
-                        ),
+                        Text('Previsão de Consumo',
+                            style:
+                                Theme.of(builderContext).textTheme.titleSmall),
                         const SizedBox(height: 8),
                         ...disponibilidade.entries.map((entry) {
                           final bool disponivel = entry.value >= 0;
-
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 4.0),
                             child: Row(
@@ -752,7 +742,7 @@ class _ProducaoScreenState extends State<ProducaoScreen>
                               ],
                             ),
                           );
-                        }).toList(),
+                        }),
                         if (disponibilidade.values.any((v) => v < 0))
                           Container(
                             margin: const EdgeInsets.only(top: 8),
@@ -774,23 +764,20 @@ class _ProducaoScreenState extends State<ProducaoScreen>
               ),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.pop(context),
+                  onPressed: () => Navigator.pop(builderContext),
                   child: const Text('Cancelar'),
                 ),
                 ElevatedButton(
-                  onPressed: () {
+                  onPressed: () async {
                     if (_formKey.currentState!.validate()) {
                       _formKey.currentState!.save();
-                      Navigator.pop(context);
+                      Navigator.pop(builderContext); // Fecha o formulário
 
-                      // Verificar se a tela ainda está montada
-                      if (!mounted) return;
-
-                      // Mostrar dialog de carregamento
+                      // Mostrar diálogo de carregamento
                       showDialog(
                         context: context,
                         barrierDismissible: false,
-                        builder: (ctx) => const AlertDialog(
+                        builder: (loadingContext) => const AlertDialog(
                           content: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
@@ -803,26 +790,21 @@ class _ProducaoScreenState extends State<ProducaoScreen>
                       );
 
                       // Registrar produção
-                      producaoViewModel
-                          .registrarProducao(
-                              formulaId, quantidade, loteProducao)
-                          .then((success) {
-                        // Fechar dialog de carregamento
-                        Navigator.of(context, rootNavigator: true).pop();
-
-                        // Mostrar resultado
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              success
-                                  ? 'Produção registrada com sucesso'
-                                  : 'Erro ao registrar produção. Verifique o estoque!',
-                            ),
-                            backgroundColor:
-                                success ? Colors.green : Colors.red,
+                      final success = await producaoViewModel.registrarProducao(
+                          formulaId, quantidade, loteProducao);
+                      Navigator.of(context, rootNavigator: true)
+                          .pop(); // Fecha o diálogo de carregamento
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            success
+                                ? 'Produção registrada com sucesso'
+                                : producaoViewModel.errorMessage ??
+                                    'Erro ao registrar produção',
                           ),
-                        );
-                      });
+                          backgroundColor: success ? Colors.green : Colors.red,
+                        ),
+                      );
                     }
                   },
                   child: const Text('Produzir'),

@@ -1,288 +1,348 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-
-import '../theme/app_theme.dart';
-import '../models/formula.dart';
 import '../viewmodels/producao_viewmodel.dart';
-import '../viewmodels/estoque_viewmodel.dart';
+import '../models/producao.dart';
+import '../models/formula.dart';
+import '../models/componente_formula.dart';
 
-class FormulasScreen extends StatefulWidget {
-  const FormulasScreen({Key? key}) : super(key: key);
+class ProducaoScreen extends StatefulWidget {
+  final int initialTab; // Adicionado para selecionar aba inicial
+  const ProducaoScreen({super.key, this.initialTab = 0});
 
   @override
-  State<FormulasScreen> createState() => _FormulasScreenState();
+  State<ProducaoScreen> createState() => _ProducaoScreenState();
 }
 
-class _FormulasScreenState extends State<FormulasScreen> {
-  final TextEditingController _searchController = TextEditingController();
-  String _searchQuery = '';
-
-  @override
-  void initState() {
-    super.initState();
-    _searchController.addListener(_onSearchChanged);
-
-    // Atualizar dados
-    Future.microtask(() {
-      Provider.of<ProducaoViewModel>(context, listen: false).carregarDados();
-      Provider.of<EstoqueViewModel>(context, listen: false).carregarDados();
-    });
-  }
-
-  @override
-  void dispose() {
-    _searchController.removeListener(_onSearchChanged);
-    _searchController.dispose();
-    super.dispose();
-  }
-
-  void _onSearchChanged() {
-    setState(() {
-      _searchQuery = _searchController.text.toLowerCase();
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final producaoViewModel = Provider.of<ProducaoViewModel>(context);
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Formulas'),
-      ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: 'Pesquisar formulas...',
-                prefixIcon: const Icon(Icons.search),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                filled: true,
-                fillColor: Colors.white,
-                suffixIcon: _searchQuery.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () {
-                          _searchController.clear();
-                        },
-                      )
-                    : null,
-              ),
-            ),
-          ),
-          Expanded(
-            child: producaoViewModel.isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _buildFormulasList(producaoViewModel),
-          ),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton(
-        heroTag: 'formulas_fab',
-        onPressed: () => _showAddFormulaDialog(context),
-        child: const Icon(Icons.add, color: Colors.black),
-      ),
-    );
-  }
-
-  Widget _buildFormulasList(ProducaoViewModel viewModel) {
-    // Filtrar fu00f3rmulas
-    final List<Formula> formulas = viewModel.formulas
-        .where((f) =>
-            f.nome.toLowerCase().contains(_searchQuery) ||
-            (f.descricao?.toLowerCase() ?? '').contains(_searchQuery))
-        .toList()
-      ..sort((a, b) => a.nome.compareTo(b.nome));
-
-    return formulas.isEmpty
-        ? Center(
-            child: Text(
-              _searchQuery.isEmpty
-                  ? 'Nenhuma Formula cadastrada'
-                  : 'Nenhuma Formula encontrada',
-              style: Theme.of(context).textTheme.bodyLarge,
-            ),
-          )
-        : RefreshIndicator(
-            onRefresh: () => viewModel.carregarDados(),
-            child: ListView.builder(
-              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-              itemCount: formulas.length,
-              itemBuilder: (context, index) {
-                final formula = formulas[index];
-                return _buildFormulaCard(formula, viewModel);
-              },
-            ),
-          );
-  }
-
-  Widget _buildFormulaCard(Formula formula, ProducaoViewModel viewModel) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: InkWell(
-        onTap: () => _showFormulaDetailsDialog(context, formula, viewModel),
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  CircleAvatar(
-                    backgroundColor: AppTheme.primaryColor.withOpacity(0.2),
-                    child: Text(
-                      formula.nome.substring(0, 1).toUpperCase(),
-                      style: TextStyle(color: AppTheme.primaryDarkColor),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          formula.nome,
-                          style: Theme.of(context).textTheme.titleMedium,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        Text(
-                          (formula.descricao?.isEmpty ?? true)
-                              ? '${formula.componentes.length} componentes'
-                              : formula.descricao ?? '',
-                          style: Theme.of(context).textTheme.bodySmall,
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 2,
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                children: formula.componentes.take(3).map((componente) {
-                  final mp =
-                      viewModel.getMateriaPrimaPorId(componente.materiaPrimaId);
-                  if (mp == null) return const SizedBox.shrink();
-
-                  return Chip(
-                    label: Text(
-                      mp.nome,
-                      style: const TextStyle(fontSize: 12),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    backgroundColor: AppTheme.primaryColor.withOpacity(0.1),
-                  );
-                }).toList(),
-              ),
-              if (formula.componentes.length > 3)
-                Text(
-                  '... e ${formula.componentes.length - 3} mais',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              const SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton.icon(
-                    onPressed: () =>
-                        _showNovaProducaoDialog(context, formula.id),
-                    icon: const Icon(Icons.add_circle_outline, size: 18),
-                    label: const Text('Produzir'),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _showAddFormulaDialog(BuildContext context) {
-    // Abrir tela de produção diretamente
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => ProductionPage(initialTab: 1)),
-    );
-  }
-
-  void _showFormulaDetailsDialog(
-      BuildContext context, Formula formula, ProducaoViewModel viewModel) {
-    // Abrir tela de produção diretamente
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-          builder: (context) =>
-              ProductionPage(initialTab: 1, selectedFormulaId: formula.id)),
-    );
-  }
-
-  void _showNovaProducaoDialog(BuildContext context, String formulaId) {
-    // Abrir tela de produção diretamente
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-          builder: (context) =>
-              ProductionPage(initialTab: 0, selectedFormulaId: formulaId)),
-    );
-  }
-}
-
-// Wrapper para a tela de produção que permite especificar a aba inicial
-class ProductionPage extends StatefulWidget {
-  final int initialTab;
-  final String? selectedFormulaId;
-
-  const ProductionPage({Key? key, this.initialTab = 0, this.selectedFormulaId})
-      : super(key: key);
-
-  @override
-  State<ProductionPage> createState() => _ProductionPageState();
-}
-
-class _ProductionPageState extends State<ProductionPage>
-    with TickerProviderStateMixin {
+class _ProducaoScreenState extends State<ProducaoScreen>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
   @override
   void initState() {
     super.initState();
-    _tabController =
-        TabController(length: 2, vsync: this, initialIndex: widget.initialTab);
+    _tabController = TabController(
+      length: 2,
+      vsync: this,
+      initialIndex:
+          widget.initialTab, // Usa o argumento para definir a aba inicial
+    );
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Produtos'),
+        title: const Text('Produção'),
         bottom: TabBar(
           controller: _tabController,
-          indicatorColor: Colors.black,
-          labelColor: Colors.black,
-          unselectedLabelColor: Colors.black54,
           tabs: const [
-            Tab(text: 'Produtos'),
-            Tab(text: 'Formulas'),
+            Tab(text: 'Produções'),
+            Tab(text: 'Fórmulas'),
           ],
         ),
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: const [
-          Center(child: Text('Aba de Produtos')),
-          Center(child: Text('Aba de Formulas')),
+      body: Consumer<ProducaoViewModel>(
+        builder: (context, producaoViewModel, child) {
+          if (producaoViewModel.isLoading) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (producaoViewModel.errorMessage != null) {
+            return Center(
+              child: Text('Erro: ${producaoViewModel.errorMessage}'),
+            );
+          }
+          return TabBarView(
+            controller: _tabController,
+            children: [
+              _buildProducoesTab(producaoViewModel),
+              _buildFormulasTab(producaoViewModel),
+            ],
+          );
+        },
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _showNovaProducaoDialog(context),
+        child: const Icon(Icons.add),
+      ),
+    );
+  }
+
+  Widget _buildProducoesTab(ProducaoViewModel producaoViewModel) {
+    final producoes = producaoViewModel.producoes;
+    if (producoes.isEmpty) {
+      return const Center(child: Text('Nenhuma produção registrada'));
+    }
+    return ListView.builder(
+      itemCount: producoes.length,
+      itemBuilder: (context, index) {
+        final producao = producoes[index];
+        final formula = producaoViewModel.getFormulaPorId(producao.formulaId);
+        return ListTile(
+          title: Text('Lote: ${producao.loteProducao}'),
+          subtitle: Text(
+              'Fórmula: ${formula?.nome ?? "Desconhecida"} | Quantidade: ${producao.quantidadeProduzida} kg'),
+          trailing: Text(producao.dataProducao.toString().substring(0, 10)),
+        );
+      },
+    );
+  }
+
+  Widget _buildFormulasTab(ProducaoViewModel producaoViewModel) {
+    final formulas = producaoViewModel.formulas;
+    if (formulas.isEmpty) {
+      return const Center(child: Text('Nenhuma fórmula cadastrada'));
+    }
+    return ListView.builder(
+      itemCount: formulas.length,
+      itemBuilder: (context, index) {
+        final formula = formulas[index];
+        return ListTile(
+          title: Text(formula.nome),
+          subtitle: Text('Componentes: ${formula.componentes.length}'),
+          trailing: IconButton(
+            icon: const Icon(Icons.edit),
+            onPressed: () => _showEditarFormulaDialog(context, formula),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showEditarFormulaDialog(BuildContext context, Formula formula) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Editar Fórmula: ${formula.nome}'),
+        content: const Text('Funcionalidade de edição a ser implementada'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Fechar'),
+          ),
         ],
       ),
+    );
+  }
+
+  void _showNovaProducaoDialog(BuildContext context,
+      {String? formulaPreSelecionada}) {
+    final producaoViewModel =
+        Provider.of<ProducaoViewModel>(context, listen: false);
+    final _formKey = GlobalKey<FormState>();
+    String formulaId = formulaPreSelecionada ??
+        (producaoViewModel.formulas.isNotEmpty
+            ? producaoViewModel.formulas.first.id
+            : '');
+    String loteProducao = '';
+    double quantidade = 0;
+    double? _simulacaoQuantidade;
+
+    if (producaoViewModel.formulas.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Cadastre uma fórmula antes de registrar produção'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (builderContext, setState) {
+            final formula = producaoViewModel.getFormulaPorId(formulaId);
+            final Map<String, double> disponibilidade =
+                _simulacaoQuantidade != null && formula != null
+                    ? producaoViewModel.verificarDisponibilidadeProducao(
+                        formulaId, _simulacaoQuantidade!)
+                    : {};
+
+            return AlertDialog(
+              title: const Text('Nova Produção'),
+              content: Form(
+                key: _formKey,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      DropdownButtonFormField<String>(
+                        decoration: const InputDecoration(labelText: 'Fórmula'),
+                        value: formulaId,
+                        items: producaoViewModel.formulas.map((f) {
+                          return DropdownMenuItem<String>(
+                            value: f.id,
+                            child:
+                                Text(f.nome, overflow: TextOverflow.ellipsis),
+                          );
+                        }).toList(),
+                        onChanged: (value) {
+                          setState(() {
+                            formulaId = value ?? '';
+                            _simulacaoQuantidade = null;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        decoration: const InputDecoration(
+                            labelText: 'Lote de Produção'),
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Por favor, informe o lote';
+                          }
+                          return null;
+                        },
+                        onSaved: (value) => loteProducao = value ?? '',
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        decoration: const InputDecoration(
+                            labelText: 'Quantidade a Produzir (kg)'),
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Por favor, informe a quantidade';
+                          }
+                          if (double.tryParse(value) == null) {
+                            return 'Por favor, informe um número válido';
+                          }
+                          if (double.parse(value) <= 0) {
+                            return 'A quantidade deve ser maior que zero';
+                          }
+                          return null;
+                        },
+                        onSaved: (value) => quantidade = double.parse(value!),
+                        onChanged: (value) {
+                          final valorNumerico = double.tryParse(value);
+                          setState(() {
+                            _simulacaoQuantidade =
+                                valorNumerico != null && valorNumerico > 0
+                                    ? valorNumerico
+                                    : null;
+                          });
+                        },
+                      ),
+                      if (_simulacaoQuantidade != null && formula != null) ...[
+                        const SizedBox(height: 24),
+                        Text('Previsão de Consumo',
+                            style:
+                                Theme.of(builderContext).textTheme.titleSmall),
+                        const SizedBox(height: 8),
+                        ...disponibilidade.entries.map((entry) {
+                          final bool disponivel = entry.value >= 0;
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 4.0),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Text(entry.key,
+                                      overflow: TextOverflow.ellipsis),
+                                ),
+                                Text(
+                                  disponivel
+                                      ? 'OK (${entry.value.toStringAsFixed(2)})'
+                                      : 'Falta ${(-entry.value).toStringAsFixed(2)}',
+                                  style: TextStyle(
+                                    color:
+                                        disponivel ? Colors.green : Colors.red,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }),
+                        if (disponibilidade.values.any((v) => v < 0))
+                          Container(
+                            margin: const EdgeInsets.only(top: 8),
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.red.shade50,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.red.shade200),
+                            ),
+                            child: const Text(
+                              'Estoque insuficiente para produção',
+                              style: TextStyle(color: Colors.red),
+                            ),
+                          ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(builderContext),
+                  child: const Text('Cancelar'),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    if (_formKey.currentState!.validate()) {
+                      _formKey.currentState!.save();
+                      Navigator.pop(builderContext); // Fecha o formulário
+
+                      showDialog(
+                        context: context,
+                        barrierDismissible: false,
+                        builder: (loadingContext) => const AlertDialog(
+                          content: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              CircularProgressIndicator(),
+                              SizedBox(height: 16),
+                              Text('Processando produção...'),
+                            ],
+                          ),
+                        ),
+                      );
+
+                      try {
+                        final success =
+                            await producaoViewModel.registrarProducao(
+                                formulaId, quantidade, loteProducao);
+                        Navigator.of(context, rootNavigator: true)
+                            .pop(); // Fecha o diálogo
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              success
+                                  ? 'Produção registrada com sucesso'
+                                  : 'Erro ao registrar produção: ${producaoViewModel.errorMessage ?? "Verifique o estoque!"}',
+                            ),
+                            backgroundColor:
+                                success ? Colors.green : Colors.red,
+                          ),
+                        );
+                      } catch (e) {
+                        Navigator.of(context, rootNavigator: true)
+                            .pop(); // Fecha o diálogo em erro
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Erro inesperado: $e'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
+                    }
+                  },
+                  child: const Text('Produzir'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 }

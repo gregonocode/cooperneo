@@ -90,9 +90,22 @@ class SupabaseService {
 
   Future<bool> saveProducao(Producao producao) async {
     try {
-      await _client.from('producoes').insert(producao.toJson());
+      final user = _client.auth.currentUser;
+      if (user == null) {
+        print('Erro: Nenhum usuário autenticado encontrado');
+        return false;
+      }
+      final data = {
+        'formula_id': producao.formulaId,
+        'quantidade_produzida': producao.quantidadeProduzida,
+        'data_producao': producao.dataProducao.toIso8601String(),
+        'user_id': user.id, // Adiciona o user_id
+      };
+      await _client.from('producoes').insert(data);
+      print('Produção salva com sucesso no Supabase');
       return true;
     } catch (e) {
+      print('Erro ao salvar produção no Supabase: $e');
       return false;
     }
   }
@@ -187,9 +200,19 @@ class SupabaseService {
 
   Future<bool> addLote(Map<String, dynamic> data) async {
     try {
-      await _client.from('lotes').insert(data);
+      final user = _client.auth.currentUser;
+      if (user == null) {
+        print('Erro: Nenhum usuário autenticado encontrado');
+        return false;
+      }
+      final dataWithUserId = {
+        ...data,
+        'user_id': user.id, // Adiciona o user_id do usuário autenticado
+      };
+      await _client.from('lotes').insert(dataWithUserId);
       return true;
     } catch (e) {
+      print('Erro ao adicionar lote no Supabase: $e');
       return false;
     }
   }

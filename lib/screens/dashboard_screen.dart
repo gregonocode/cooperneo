@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
-import 'package:supabase_flutter/supabase_flutter.dart'; // Adicione esta importação
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../theme/app_theme.dart';
 import '../viewmodels/estoque_viewmodel.dart';
@@ -11,10 +11,10 @@ import '../models/materia_prima.dart';
 import 'estoque_screen.dart';
 import 'materias_primas_screen.dart';
 import 'fornecedores_screen.dart';
-import 'formulas_screen.dart';
-import 'producao_screen.dart';
+import 'formulas_screen.dart' as FormulasScreenFile; // Mantido por enquanto
+import 'producao_screen.dart' as ProducaoScreenFile;
 import 'relatorios_screen.dart';
-import 'login_screen.dart'; // Adicione esta importação para a tela de login
+import 'login_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({Key? key}) : super(key: key);
@@ -62,7 +62,6 @@ class _DashboardScreenState extends State<DashboardScreen>
     super.dispose();
   }
 
-  // Função para fazer logout
   Future<void> _logout() async {
     await Supabase.instance.client.auth.signOut();
     Navigator.of(context).pushReplacement(
@@ -83,7 +82,7 @@ class _DashboardScreenState extends State<DashboardScreen>
           IconButton(
             icon: const Icon(Icons.logout),
             tooltip: 'Sair',
-            onPressed: _logout, // Chama a função de logout
+            onPressed: _logout,
           ),
         ],
       ),
@@ -204,7 +203,11 @@ class _DashboardScreenState extends State<DashboardScreen>
               onTap: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const FormulasScreen()),
+                  MaterialPageRoute(
+                    builder: (_) => const ProducaoScreenFile.ProducaoScreen(),
+                    settings:
+                        const RouteSettings(arguments: 1), // Aba "Fórmulas"
+                  ),
                 );
               },
             ),
@@ -215,7 +218,9 @@ class _DashboardScreenState extends State<DashboardScreen>
               onTap: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const ProducaoScreen()),
+                  MaterialPageRoute(
+                      builder: (_) =>
+                          const ProducaoScreenFile.ProducaoScreen()),
                 );
               },
             ),
@@ -268,7 +273,6 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   Widget _buildEstoqueSummary(List<MateriaPrima> materiasPrimas) {
-    // Ordenar por menor estoque
     final List<MateriaPrima> sortedMaterias = List.from(materiasPrimas);
     sortedMaterias.sort((a, b) => a.estoqueAtual.compareTo(b.estoqueAtual));
 
@@ -376,7 +380,9 @@ class _DashboardScreenState extends State<DashboardScreen>
               onPressed: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const ProducaoScreen()),
+                  MaterialPageRoute(
+                      builder: (_) =>
+                          const ProducaoScreenFile.ProducaoScreen()),
                 );
               },
               icon: const Icon(Icons.visibility, size: 18),
