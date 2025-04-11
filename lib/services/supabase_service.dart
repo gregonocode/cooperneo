@@ -81,9 +81,39 @@ class SupabaseService {
   // Produções
   Future<List<Producao>> getProducoes() async {
     try {
+      print('Buscando produções no Supabase...');
       final response = await _client.from('producoes').select();
-      return response.map((item) => Producao.fromJson(item)).toList();
+      final data = response as List<dynamic>? ?? [];
+      print('Dados brutos das produções: $data');
+
+      final producoesList = data.map((item) {
+        final map = item as Map<String, dynamic>;
+        try {
+          return Producao.fromJson(map);
+        } catch (e) {
+          print('Erro ao mapear produção: $map, erro: $e');
+          // Retorna um objeto padrão para não interromper o carregamento
+          return Producao(
+            id: map['id']?.toString() ??
+                'desconhecido_${DateTime.now().millisecondsSinceEpoch}',
+            formulaId: map['formula_id']?.toString() ?? '',
+            quantidadeProduzida:
+                (map['quantidade_produzida'] as num?)?.toDouble() ?? 0.0,
+            loteProducao: map['lote_producao']?.toString() ?? 'Desconhecido',
+            materiaPrimaConsumida:
+                (map['materia_prima_consumida'] as Map<String, dynamic>? ?? {})
+                    .map((key, value) => MapEntry(
+                        key.toString(), (value as num?)?.toDouble() ?? 0.0)),
+            dataProducao:
+                DateTime.tryParse(map['data_producao']?.toString() ?? '') ??
+                    DateTime.now(),
+          );
+        }
+      }).toList();
+      print('Produções mapeadas: $producoesList');
+      return producoesList;
     } catch (e) {
+      print('Erro ao buscar produções: $e');
       throw Exception('Erro ao buscar produções: $e');
     }
   }
@@ -99,8 +129,11 @@ class SupabaseService {
         'formula_id': producao.formulaId,
         'quantidade_produzida': producao.quantidadeProduzida,
         'data_producao': producao.dataProducao.toIso8601String(),
+        'lote_producao': producao.loteProducao, // Inclui lote_producao
+        'materia_prima_consumida': producao.materiaPrimaConsumida,
         'user_id': user.id, // Adiciona o user_id
       };
+      print('Tentando salvar produção no Supabase: $data');
       await _client.from('producoes').insert(data);
       print('Produção salva com sucesso no Supabase');
       return true;
