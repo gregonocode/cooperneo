@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../viewmodels/producao_viewmodel.dart';
-import '../models/producao.dart';
 import '../models/formula.dart';
-import '../models/componente_formula.dart';
 
 class ProducaoScreen extends StatefulWidget {
   final int initialTab; // Adicionado para selecionar aba inicial
@@ -86,7 +84,7 @@ class _ProducaoScreenState extends State<ProducaoScreen>
         return ListTile(
           title: Text('Lote: ${producao.loteProducao}'),
           subtitle: Text(
-              'Fórmula: ${formula?.nome ?? "Desconhecida"} | Quantidade: ${producao.quantidadeProduzida} kg'),
+              'Fórmula: ${formula?.nome ?? "Desconhecida"} | Quantidade: ${producao.quantidadeProduzida} btd'),
           trailing: Text(producao.dataProducao.toString().substring(0, 10)),
         );
       },
@@ -205,7 +203,7 @@ class _ProducaoScreenState extends State<ProducaoScreen>
                       const SizedBox(height: 16),
                       TextFormField(
                         decoration: const InputDecoration(
-                            labelText: 'Quantidade a Produzir (kg)'),
+                            labelText: 'Quantidade a Produzir (btd)'),
                         keyboardType: const TextInputType.numberWithOptions(
                             decimal: true),
                         validator: (value) {

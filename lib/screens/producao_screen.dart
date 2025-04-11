@@ -187,7 +187,7 @@ class _ProducaoScreenState extends State<ProducaoScreen>
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
-                      '${producao.quantidadeProduzida.toStringAsFixed(2)} kg',
+                      '${producao.quantidadeProduzida.toStringAsFixed(2)} btd',
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                             fontWeight: FontWeight.bold,
                           ),
@@ -369,7 +369,7 @@ class _ProducaoScreenState extends State<ProducaoScreen>
                       title: 'Informações Gerais',
                       children: [
                         _buildInfoRow('Quantidade Produzida',
-                            '${producao.quantidadeProduzida.toStringAsFixed(2)} kg'),
+                            '${producao.quantidadeProduzida.toStringAsFixed(2)} btd'),
                         _buildInfoRow(
                             'Data de Produção',
                             DateFormat('dd/MM/yyyy HH:mm')
@@ -686,7 +686,7 @@ class _ProducaoScreenState extends State<ProducaoScreen>
                       const SizedBox(height: 16),
                       TextFormField(
                         decoration: const InputDecoration(
-                            labelText: 'Quantidade a Produzir (kg)'),
+                            labelText: 'Quantidade a Produzir (btd)'),
                         keyboardType: const TextInputType.numberWithOptions(
                             decimal: true),
                         validator: (value) {
@@ -1156,7 +1156,7 @@ class _ProducaoScreenState extends State<ProducaoScreen>
     final _formKey = GlobalKey<FormState>();
     String materiaPrimaId = estoqueViewModel.materiasPrimas.first.id;
     double quantidade = 0;
-    String unidadeMedida = 'kg';
+    String unidadeMedida = 'btd';
 
     showDialog(
       context: context,
