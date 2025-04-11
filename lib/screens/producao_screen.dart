@@ -1156,7 +1156,7 @@ class _ProducaoScreenState extends State<ProducaoScreen>
     final _formKey = GlobalKey<FormState>();
     String materiaPrimaId = estoqueViewModel.materiasPrimas.first.id;
     double quantidade = 0;
-    String unidadeMedida = 'btd';
+    String unidadeMedida = 'kg';
 
     showDialog(
       context: context,
@@ -1168,9 +1168,7 @@ class _ProducaoScreenState extends State<ProducaoScreen>
             mainAxisSize: MainAxisSize.min,
             children: [
               DropdownButtonFormField<String>(
-                decoration: const InputDecoration(
-                  labelText: 'Matéria-Prima',
-                ),
+                decoration: const InputDecoration(labelText: 'Matéria-Prima'),
                 value: materiaPrimaId,
                 items: estoqueViewModel.materiasPrimas.map((mp) {
                   return DropdownMenuItem<String>(

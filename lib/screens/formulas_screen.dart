@@ -84,7 +84,7 @@ class _ProducaoScreenState extends State<ProducaoScreen>
         return ListTile(
           title: Text('Lote: ${producao.loteProducao}'),
           subtitle: Text(
-              'Fórmula: ${formula?.nome ?? "Desconhecida"} | Quantidade: ${producao.quantidadeProduzida} btd'),
+              'Fórmula: ${formula?.nome ?? "Desconhecida"} | Quantidade: ${producao.quantidadeProduzida} kg'),
           trailing: Text(producao.dataProducao.toString().substring(0, 10)),
         );
       },
