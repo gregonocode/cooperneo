@@ -9,6 +9,7 @@ import 'package:collection/collection.dart';
 import '../models/materia_prima.dart';
 import '../models/formula.dart';
 import '../models/producao.dart';
+import '../models/lote.dart'; // Importação adicionada
 import '../services/supabase_service.dart';
 import 'package:pdf/pdf.dart';
 
@@ -18,6 +19,7 @@ class RelatoriosViewModel extends ChangeNotifier {
   List<MateriaPrima> _materiasPrimas = [];
   List<Formula> _formulas = [];
   List<Producao> _producoes = [];
+  List<Lote> _lotes = []; // Lista de lotes adicionada
 
   bool _isLoading = false;
   String? _errorMessage;
@@ -25,6 +27,7 @@ class RelatoriosViewModel extends ChangeNotifier {
   List<MateriaPrima> get materiasPrimas => _materiasPrimas;
   List<Formula> get formulas => _formulas;
   List<Producao> get producoes => _producoes;
+  List<Lote> get lotes => _lotes; // Getter para lotes
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
 
@@ -40,12 +43,8 @@ class RelatoriosViewModel extends ChangeNotifier {
       _materiasPrimas = await _supabaseService.fetchMateriasPrimas();
       _formulas = await _supabaseService.fetchFormulas();
       _producoes = await _supabaseService.getProducoes();
-
-      // Logs para verificar os dados carregados
-      print('Matérias-primas carregadas: $_materiasPrimas');
-      print('Fórmulas carregadas: $_formulas');
-      print('Produções carregadas: $_producoes');
-
+      _lotes = await _supabaseService.fetchLotes(); // Carrega os lotes
+      print('Lotes carregados: $_lotes'); // Para depuração
       _errorMessage = null;
     } catch (e) {
       _errorMessage = 'Erro ao carregar dados: $e';
@@ -64,6 +63,18 @@ class RelatoriosViewModel extends ChangeNotifier {
     return _materiasPrimas.firstWhereOrNull((mp) => mp.id == id);
   }
 
+  // Função ajustada para buscar o numero_lote com base no materia_prima_id
+  String getNumeroLoteParaMateriaPrima(
+      String materiaPrimaId, Producao producao) {
+    // Busca um lote que corresponda à matéria-prima
+    final lote = _lotes.firstWhereOrNull(
+      (lote) => lote.materiaPrimaId == materiaPrimaId,
+    );
+
+    // Se encontrar um lote, retorna o numero_lote; caso contrário, usa o loteProducao como fallback
+    return lote?.numeroLote ?? producao.loteProducao;
+  }
+
   Future<pw.Font> _loadRobotoFont() async {
     final fontData = await rootBundle.load('assets/fonts/Roboto-Regular.ttf');
     return pw.Font.ttf(fontData);
@@ -73,7 +84,6 @@ class RelatoriosViewModel extends ChangeNotifier {
     final pdfDoc = pw.Document();
     final robotoFont = await _loadRobotoFont();
 
-    // Filtrar produções do dia
     final producoesDoDia = _producoes
         .where((p) =>
             p.dataProducao.year == data.year &&
@@ -86,11 +96,10 @@ class RelatoriosViewModel extends ChangeNotifier {
     for (final producao in producoesDoDia) {
       final formula = getFormulaPorId(producao.formulaId);
 
-      // Linha da produção com fundo cinza claro e texto centralizado
       tableRows.add(
         pw.TableRow(
           decoration: const pw.BoxDecoration(
-            color: PdfColors.grey200, // Cinza claro para linha de produção
+            color: PdfColors.grey200,
           ),
           children: [
             pw.Container(
@@ -114,7 +123,7 @@ class RelatoriosViewModel extends ChangeNotifier {
             ),
             pw.Container(
               padding: const pw.EdgeInsets.all(8),
-              alignment: pw.Alignment.center,
+              alignment: pw.Alignment.centerRight,
               child: pw.Text(
                 '${producao.quantidadeProduzida.toStringAsFixed(2)} btd',
                 style: pw.TextStyle(font: robotoFont),
@@ -124,7 +133,6 @@ class RelatoriosViewModel extends ChangeNotifier {
         ),
       );
 
-      // Linhas das matérias-primas
       if (formula != null && formula.componentes.isNotEmpty) {
         for (final componente in formula.componentes) {
           final materiaPrima = getMateriaPrimaPorId(componente.materiaPrimaId);
@@ -143,7 +151,8 @@ class RelatoriosViewModel extends ChangeNotifier {
                   padding: const pw.EdgeInsets.all(8),
                   alignment: pw.Alignment.center,
                   child: pw.Text(
-                    componente.materiaPrimaId,
+                    getNumeroLoteParaMateriaPrima(
+                        componente.materiaPrimaId, producao),
                     style: pw.TextStyle(font: robotoFont),
                   ),
                 ),
@@ -161,7 +170,6 @@ class RelatoriosViewModel extends ChangeNotifier {
         }
       }
 
-      // Linha em branco entre produções
       tableRows.add(
         pw.TableRow(
           decoration: const pw.BoxDecoration(color: PdfColors.white),
@@ -190,7 +198,7 @@ class RelatoriosViewModel extends ChangeNotifier {
                 pw.Text(
                   'Controle de Produção Diário-Mistura/Ensaque',
                   style: pw.TextStyle(
-                    fontSize: 20,
+                    fontSize: 18,
                     fontWeight: pw.FontWeight.bold,
                     font: robotoFont,
                   ),
@@ -201,7 +209,7 @@ class RelatoriosViewModel extends ChangeNotifier {
                     pw.Container(
                       alignment: pw.Alignment.centerLeft,
                       child: pw.Text(
-                        'N° Documento:',
+                        'N° Documento: BPF 18',
                         style: pw.TextStyle(
                           fontSize: 12,
                           font: robotoFont,
@@ -256,8 +264,7 @@ class RelatoriosViewModel extends ChangeNotifier {
               children: [
                 pw.TableRow(
                   decoration: const pw.BoxDecoration(
-                    color:
-                        PdfColors.amber100, // Amarelo pastel para o cabeçalho
+                    color: PdfColors.amber100,
                   ),
                   children: [
                     pw.Container(
@@ -432,8 +439,7 @@ class RelatoriosViewModel extends ChangeNotifier {
               children: [
                 pw.TableRow(
                   decoration: const pw.BoxDecoration(
-                    color:
-                        PdfColors.amber100, // Amarelo pastel para o cabeçalho
+                    color: PdfColors.amber100,
                   ),
                   children: [
                     pw.Container(
@@ -508,11 +514,10 @@ class RelatoriosViewModel extends ChangeNotifier {
     for (final producao in producoesDaSemana) {
       final formula = getFormulaPorId(producao.formulaId);
 
-      // Linha da produção com fundo cinza claro e texto centralizado
       tableRows.add(
         pw.TableRow(
           decoration: const pw.BoxDecoration(
-            color: PdfColors.grey200, // Cinza bem claro para linha de produção
+            color: PdfColors.grey200,
           ),
           children: [
             pw.Container(
@@ -536,7 +541,7 @@ class RelatoriosViewModel extends ChangeNotifier {
             ),
             pw.Container(
               padding: const pw.EdgeInsets.all(8),
-              alignment: pw.Alignment.center,
+              alignment: pw.Alignment.centerRight,
               child: pw.Text(
                 '${producao.quantidadeProduzida.toStringAsFixed(2)} btd',
                 style: pw.TextStyle(font: robotoFont),
@@ -546,7 +551,6 @@ class RelatoriosViewModel extends ChangeNotifier {
         ),
       );
 
-      // Linhas das matérias-primas (sem fundo colorido, mantendo alinhamento original)
       if (formula != null && formula.componentes.isNotEmpty) {
         for (final componente in formula.componentes) {
           final materiaPrima = getMateriaPrimaPorId(componente.materiaPrimaId);
@@ -565,7 +569,8 @@ class RelatoriosViewModel extends ChangeNotifier {
                   padding: const pw.EdgeInsets.all(8),
                   alignment: pw.Alignment.center,
                   child: pw.Text(
-                    componente.materiaPrimaId,
+                    getNumeroLoteParaMateriaPrima(
+                        componente.materiaPrimaId, producao),
                     style: pw.TextStyle(font: robotoFont),
                   ),
                 ),
@@ -611,7 +616,7 @@ class RelatoriosViewModel extends ChangeNotifier {
                     pw.Container(
                       alignment: pw.Alignment.centerLeft,
                       child: pw.Text(
-                        'N° Documento:',
+                        'N° Documento:BPF 18',
                         style: pw.TextStyle(
                           fontSize: 12,
                           font: robotoFont,
@@ -669,8 +674,7 @@ class RelatoriosViewModel extends ChangeNotifier {
               children: [
                 pw.TableRow(
                   decoration: const pw.BoxDecoration(
-                    color:
-                        PdfColors.amber100, // Amarelo pastel para o cabeçalho
+                    color: PdfColors.amber100,
                   ),
                   children: [
                     pw.Container(
@@ -845,8 +849,7 @@ class RelatoriosViewModel extends ChangeNotifier {
               children: [
                 pw.TableRow(
                   decoration: const pw.BoxDecoration(
-                    color:
-                        PdfColors.amber100, // Amarelo pastel para o cabeçalho
+                    color: PdfColors.amber100,
                   ),
                   children: [
                     pw.Container(
@@ -908,7 +911,6 @@ class RelatoriosViewModel extends ChangeNotifier {
     final pdfDoc = pw.Document();
     final robotoFont = await _loadRobotoFont();
 
-    // Filtrar produções do período personalizado
     final producoesPeriodo = _producoes
         .where((p) =>
             p.dataProducao.isAfter(inicio.subtract(const Duration(days: 1))) &&
@@ -920,11 +922,10 @@ class RelatoriosViewModel extends ChangeNotifier {
     for (final producao in producoesPeriodo) {
       final formula = getFormulaPorId(producao.formulaId);
 
-      // Linha da produção com fundo cinza claro e texto centralizado
       tableRows.add(
         pw.TableRow(
           decoration: const pw.BoxDecoration(
-            color: PdfColors.grey200, // Cinza claro para linha de produção
+            color: PdfColors.grey200,
           ),
           children: [
             pw.Container(
@@ -948,7 +949,7 @@ class RelatoriosViewModel extends ChangeNotifier {
             ),
             pw.Container(
               padding: const pw.EdgeInsets.all(8),
-              alignment: pw.Alignment.center,
+              alignment: pw.Alignment.centerRight,
               child: pw.Text(
                 '${producao.quantidadeProduzida.toStringAsFixed(2)} btd',
                 style: pw.TextStyle(font: robotoFont),
@@ -958,7 +959,6 @@ class RelatoriosViewModel extends ChangeNotifier {
         ),
       );
 
-      // Linhas das matérias-primas
       if (formula != null && formula.componentes.isNotEmpty) {
         for (final componente in formula.componentes) {
           final materiaPrima = getMateriaPrimaPorId(componente.materiaPrimaId);
@@ -977,7 +977,8 @@ class RelatoriosViewModel extends ChangeNotifier {
                   padding: const pw.EdgeInsets.all(8),
                   alignment: pw.Alignment.center,
                   child: pw.Text(
-                    componente.materiaPrimaId,
+                    getNumeroLoteParaMateriaPrima(
+                        componente.materiaPrimaId, producao),
                     style: pw.TextStyle(font: robotoFont),
                   ),
                 ),
@@ -1012,7 +1013,7 @@ class RelatoriosViewModel extends ChangeNotifier {
                 pw.Text(
                   'Controle de Produção Mistura/Ensaque',
                   style: pw.TextStyle(
-                    fontSize: 20,
+                    fontSize: 18,
                     fontWeight: pw.FontWeight.bold,
                     font: robotoFont,
                   ),
@@ -1023,7 +1024,7 @@ class RelatoriosViewModel extends ChangeNotifier {
                     pw.Container(
                       alignment: pw.Alignment.centerLeft,
                       child: pw.Text(
-                        'N° Documento:',
+                        'N° Documento:BPF 18',
                         style: pw.TextStyle(
                           fontSize: 12,
                           font: robotoFont,
@@ -1081,8 +1082,7 @@ class RelatoriosViewModel extends ChangeNotifier {
               children: [
                 pw.TableRow(
                   decoration: const pw.BoxDecoration(
-                    color:
-                        PdfColors.amber100, // Amarelo pastel para o cabeçalho
+                    color: PdfColors.amber100,
                   ),
                   children: [
                     pw.Container(
@@ -1257,8 +1257,7 @@ class RelatoriosViewModel extends ChangeNotifier {
               children: [
                 pw.TableRow(
                   decoration: const pw.BoxDecoration(
-                    color:
-                        PdfColors.amber100, // Amarelo pastel para o cabeçalho
+                    color: PdfColors.amber100,
                   ),
                   children: [
                     pw.Container(
