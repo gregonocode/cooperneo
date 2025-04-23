@@ -75,14 +75,22 @@ class RelatoriosViewModel extends ChangeNotifier {
     return lote?.numeroLote ?? producao.loteProducao;
   }
 
-  Future<pw.Font> _loadRobotoFont() async {
-    final fontData = await rootBundle.load('assets/fonts/Roboto-Regular.ttf');
-    return pw.Font.ttf(fontData);
+  Future<Map<String, pw.Font>> _loadRobotoFonts() async {
+    final robotoRegular =
+        pw.Font.ttf(await rootBundle.load('assets/fonts/Roboto-Regular.ttf'));
+    final robotoBold =
+        pw.Font.ttf(await rootBundle.load('assets/fonts/Roboto-Bold.ttf'));
+    return {
+      'regular': robotoRegular,
+      'bold': robotoBold,
+    };
   }
 
   Future<Uint8List> gerarRelatorioDiarioPDF(DateTime data) async {
     final pdfDoc = pw.Document();
-    final robotoFont = await _loadRobotoFont();
+    final fonts = await _loadRobotoFonts(); // Carrega o mapa de fontes
+    final robotoFont = fonts['regular']!; // Fonte regular
+    final robotoFontBold = fonts['bold']!; // Fonte bold
 
     final producoesDoDia = _producoes
         .where((p) =>
@@ -204,15 +212,26 @@ class RelatoriosViewModel extends ChangeNotifier {
                   ),
                 ),
                 pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.end,
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
                   children: [
                     pw.Container(
                       alignment: pw.Alignment.centerLeft,
-                      child: pw.Text(
-                        'N° Documento: BPF 18',
-                        style: pw.TextStyle(
-                          fontSize: 12,
-                          font: robotoFont,
+                      child: pw.RichText(
+                        text: pw.TextSpan(
+                          text: 'N° Documento: ',
+                          style: pw.TextStyle(
+                            fontSize: 12,
+                            font: robotoFont,
+                          ),
+                          children: [
+                            pw.TextSpan(
+                              text: 'BPF 18',
+                              style: pw.TextStyle(
+                                fontSize: 12,
+                                font: robotoFontBold,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -302,25 +321,25 @@ class RelatoriosViewModel extends ChangeNotifier {
                   children: [
                     pw.Container(
                       padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.center,
+                      alignment: pw.Alignment.centerLeft,
                       child: pw.Text(
-                        'Responsável: Helves Presllei',
+                        'Responsável: Helves P. Santos',
                         style: pw.TextStyle(fontSize: 10, font: robotoFont),
                       ),
                     ),
                     pw.Container(
                       padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.center,
+                      alignment: pw.Alignment.centerLeft,
                       child: pw.Text(
-                        'Responsável: Pedro Luiz',
+                        'Responsável: Pedro Luiz ferreira',
                         style: pw.TextStyle(fontSize: 10, font: robotoFont),
                       ),
                     ),
                     pw.Container(
                       padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.center,
+                      alignment: pw.Alignment.centerLeft,
                       child: pw.Text(
-                        'Responsável: Franciele Aparecida',
+                        'Responsável: Franciele A. Santos',
                         style: pw.TextStyle(fontSize: 10, font: robotoFont),
                       ),
                     ),
@@ -490,7 +509,9 @@ class RelatoriosViewModel extends ChangeNotifier {
 
   Future<Uint8List> gerarRelatorioSemanalPDF(DateTime data) async {
     final pdfDoc = pw.Document();
-    final robotoFont = await _loadRobotoFont();
+    final fonts = await _loadRobotoFonts(); // Carrega o mapa de fontes
+    final robotoFont = fonts['regular']!; // Fonte regular
+    final robotoFontBold = fonts['bold']!; // Fonte bold
 
     final inicioSemana = data.subtract(Duration(days: data.weekday - 1));
     final fimSemana = inicioSemana.add(const Duration(days: 6));
@@ -608,11 +629,22 @@ class RelatoriosViewModel extends ChangeNotifier {
                   children: [
                     pw.Container(
                       alignment: pw.Alignment.centerLeft,
-                      child: pw.Text(
-                        'N° Documento: BPF 18',
-                        style: pw.TextStyle(
-                          fontSize: 12,
-                          font: robotoFont,
+                      child: pw.RichText(
+                        text: pw.TextSpan(
+                          text: 'N° Documento: ',
+                          style: pw.TextStyle(
+                            fontSize: 12,
+                            font: robotoFont,
+                          ),
+                          children: [
+                            pw.TextSpan(
+                              text: 'BPF 18',
+                              style: pw.TextStyle(
+                                fontSize: 12,
+                                font: robotoFontBold,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -705,25 +737,25 @@ class RelatoriosViewModel extends ChangeNotifier {
                   children: [
                     pw.Container(
                       padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.center,
+                      alignment: pw.Alignment.centerLeft,
                       child: pw.Text(
-                        'Responsável: Helves Presllei',
+                        'Responsável: Helves P. Santos',
                         style: pw.TextStyle(fontSize: 10, font: robotoFont),
                       ),
                     ),
                     pw.Container(
                       padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.center,
+                      alignment: pw.Alignment.centerLeft,
                       child: pw.Text(
-                        'Responsável: Pedro Luiz',
+                        'Responsável: Pedro Luiz ferreira',
                         style: pw.TextStyle(fontSize: 10, font: robotoFont),
                       ),
                     ),
                     pw.Container(
                       padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.center,
+                      alignment: pw.Alignment.centerLeft,
                       child: pw.Text(
-                        'Responsável: Franciele Aparecida',
+                        'Responsável: Franciele A. Santos',
                         style: pw.TextStyle(fontSize: 10, font: robotoFont),
                       ),
                     ),
@@ -895,7 +927,9 @@ class RelatoriosViewModel extends ChangeNotifier {
       DateTime inicio, DateTime fim,
       [String? empresa]) async {
     final pdfDoc = pw.Document();
-    final robotoFont = await _loadRobotoFont();
+    final fonts = await _loadRobotoFonts(); // Carrega o mapa de fontes
+    final robotoFont = fonts['regular']!; // Fonte regular
+    final robotoFontBold = fonts['bold']!; // Fonte bold
 
     final producoesPeriodo = _producoes
         .where((p) =>
@@ -1009,11 +1043,22 @@ class RelatoriosViewModel extends ChangeNotifier {
                   children: [
                     pw.Container(
                       alignment: pw.Alignment.centerLeft,
-                      child: pw.Text(
-                        'N° Documento: BPF 18',
-                        style: pw.TextStyle(
-                          fontSize: 12,
-                          font: robotoFont,
+                      child: pw.RichText(
+                        text: pw.TextSpan(
+                          text: 'N° Documento: ',
+                          style: pw.TextStyle(
+                            fontSize: 12,
+                            font: robotoFont,
+                          ),
+                          children: [
+                            pw.TextSpan(
+                              text: 'BPF 18',
+                              style: pw.TextStyle(
+                                fontSize: 12,
+                                font: robotoFontBold,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -1294,7 +1339,10 @@ class RelatoriosViewModel extends ChangeNotifier {
 
   Future<Uint8List> gerarRelatorioEstoquePDF() async {
     final pdfDoc = pw.Document();
-    final robotoFont = await _loadRobotoFont();
+    final fonts = await _loadRobotoFonts(); // Carrega o mapa de fontes
+    final robotoFont = fonts['regular']!; // Fonte regular
+    final robotoFontBold = fonts['bold']!; // Fonte bold
+
     final materiasOrdenadas = List<MateriaPrima>.from(_materiasPrimas)
       ..sort((a, b) => a.estoqueAtual.compareTo(b.estoqueAtual));
 
@@ -1307,7 +1355,7 @@ class RelatoriosViewModel extends ChangeNotifier {
               'Relatório de Estoque - ${DateFormat('dd/MM/yyyy').format(DateTime.now())}',
               style: pw.TextStyle(
                 fontSize: 20,
-                font: robotoFont,
+                font: robotoFontBold, // Usa fonte bold para o título
                 fontWeight: pw.FontWeight.bold,
               ),
             ),
@@ -1322,7 +1370,7 @@ class RelatoriosViewModel extends ChangeNotifier {
                 headers: ['Matéria-Prima', 'Estoque Atual', 'Unidade'],
                 cellStyle: pw.TextStyle(font: robotoFont),
                 headerStyle: pw.TextStyle(
-                  font: robotoFont,
+                  font: robotoFontBold,
                   fontWeight: pw.FontWeight.bold,
                 ),
                 data: materiasOrdenadas
