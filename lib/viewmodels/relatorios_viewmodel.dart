@@ -238,13 +238,6 @@ class RelatoriosViewModel extends ChangeNotifier {
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
                   pw.Text(
-                    'Relatório Diário de Produção',
-                    style: pw.TextStyle(
-                      fontSize: 16,
-                      fontWeight: pw.FontWeight.bold,
-                    ),
-                  ),
-                  pw.Text(
                     'Página ${context.pageNumber} de ${context.pagesCount}',
                     style: pw.TextStyle(fontSize: 10, color: PdfColors.grey600),
                   ),
@@ -408,7 +401,7 @@ class RelatoriosViewModel extends ChangeNotifier {
             child: pw.Text(
               'Data: ${DateFormat('dd/MM/yyyy').format(data)}',
               style: pw.TextStyle(
-                fontSize: 18,
+                fontSize: 10,
                 fontWeight: pw.FontWeight.bold,
                 color: PdfColors.black,
               ),
@@ -616,7 +609,7 @@ class RelatoriosViewModel extends ChangeNotifier {
                     pw.Container(
                       alignment: pw.Alignment.centerLeft,
                       child: pw.Text(
-                        'N° Documento:BPF 18',
+                        'N° Documento: BPF 18',
                         style: pw.TextStyle(
                           fontSize: 12,
                           font: robotoFont,
@@ -647,13 +640,6 @@ class RelatoriosViewModel extends ChangeNotifier {
               child: pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
-                  pw.Text(
-                    'Relatório Semanal de Produção',
-                    style: pw.TextStyle(
-                      fontSize: 16,
-                      fontWeight: pw.FontWeight.bold,
-                    ),
-                  ),
                   pw.Text(
                     'Página ${context.pageNumber} de ${context.pagesCount}',
                     style: pw.TextStyle(fontSize: 10, color: PdfColors.grey600),
@@ -818,7 +804,7 @@ class RelatoriosViewModel extends ChangeNotifier {
             child: pw.Text(
               'Período: ${DateFormat('dd/MM/yyyy').format(inicioSemana)} a ${DateFormat('dd/MM/yyyy').format(fimSemana)}',
               style: pw.TextStyle(
-                fontSize: 18,
+                fontSize: 10,
                 fontWeight: pw.FontWeight.bold,
                 color: PdfColors.black,
               ),
@@ -1024,7 +1010,7 @@ class RelatoriosViewModel extends ChangeNotifier {
                     pw.Container(
                       alignment: pw.Alignment.centerLeft,
                       child: pw.Text(
-                        'N° Documento:BPF 18',
+                        'N° Documento: BPF 18',
                         style: pw.TextStyle(
                           fontSize: 12,
                           font: robotoFont,
@@ -1055,13 +1041,6 @@ class RelatoriosViewModel extends ChangeNotifier {
               child: pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
-                  pw.Text(
-                    'Relatório Personalizado de Produção',
-                    style: pw.TextStyle(
-                      fontSize: 16,
-                      fontWeight: pw.FontWeight.bold,
-                    ),
-                  ),
                   pw.Text(
                     'Página ${context.pageNumber} de ${context.pagesCount}',
                     style: pw.TextStyle(fontSize: 10, color: PdfColors.grey600),
@@ -1127,25 +1106,25 @@ class RelatoriosViewModel extends ChangeNotifier {
                   children: [
                     pw.Container(
                       padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.center,
+                      alignment: pw.Alignment.centerLeft,
                       child: pw.Text(
-                        'Responsável: Helves Presllei',
+                        'Responsável: Helves P. Santos',
                         style: pw.TextStyle(fontSize: 10, font: robotoFont),
                       ),
                     ),
                     pw.Container(
                       padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.center,
+                      alignment: pw.Alignment.centerLeft,
                       child: pw.Text(
-                        'Responsável: Pedro Luiz',
+                        'Responsável: Pedro Luiz ferreira',
                         style: pw.TextStyle(fontSize: 10, font: robotoFont),
                       ),
                     ),
                     pw.Container(
                       padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.center,
+                      alignment: pw.Alignment.centerLeft,
                       child: pw.Text(
-                        'Responsável: Franciele Aparecida',
+                        'Responsável: Franciele A. Santos',
                         style: pw.TextStyle(fontSize: 10, font: robotoFont),
                       ),
                     ),
@@ -1226,7 +1205,7 @@ class RelatoriosViewModel extends ChangeNotifier {
             child: pw.Text(
               'Período: ${DateFormat('dd/MM/yyyy').format(inicio)} a ${DateFormat('dd/MM/yyyy').format(fim)}',
               style: pw.TextStyle(
-                fontSize: 18,
+                fontSize: 10,
                 fontWeight: pw.FontWeight.bold,
                 color: PdfColors.black,
               ),

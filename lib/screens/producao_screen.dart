@@ -422,9 +422,122 @@ class _ProducaoScreenState extends State<ProducaoScreen>
                   ],
                 ),
               ),
+              // Adicionando o rodapé com os botões
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        _showDeleteConfirmationDialog(
+                          context,
+                          'Excluir Produção',
+                          'Deseja realmente excluir a produção do lote "${producao.loteProducao}"? Esta ação não pode ser desfeita.',
+                          () => viewModel.excluirProducao(producao.id),
+                          viewModel: viewModel,
+                          entityType: 'producao',
+                        );
+                      },
+                      icon: const Icon(Icons.delete, size: 18),
+                      label: const Text('Excluir'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                    ElevatedButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Cancelar'),
+                    ),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+// Função para exibir o diálogo de confirmação de exclusão
+  void _showDeleteConfirmationDialog(
+    BuildContext context,
+    String title,
+    String message,
+    Future<bool> Function() onConfirm, {
+    required ProducaoViewModel viewModel,
+    required String entityType, // 'producao' ou 'formula'
+  }) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () async {
+              print('Confirmando exclusão: entityType=$entityType');
+              Navigator.pop(context); // Fecha o diálogo de confirmação
+              final success = await onConfirm();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    success
+                        ? entityType == 'producao'
+                            ? 'Produção excluída com sucesso'
+                            : 'Fórmula excluída com sucesso'
+                        : viewModel.errorMessage ??
+                            'Erro ao excluir ${entityType == 'producao' ? 'produção' : 'fórmula'}',
+                  ),
+                  backgroundColor: success ? Colors.green : Colors.red,
+                ),
+              );
+              print('Exclusão: success=$success, entityType=$entityType');
+              if (success && entityType == 'producao') {
+                Navigator.pop(context); // Fecha o modal de detalhes
+              }
+            },
+            child: const Text('Excluir'),
+          ),
+        ],
+      ),
+    );
+  }
+
+// Funções auxiliares (supondo que já existam no seu código)
+  Widget _buildInfoSection(
+      {required String title, required List<Widget> children}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 8),
+        ...children,
+      ],
+    );
+  }
+
+  Widget _buildInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: const TextStyle(fontWeight: FontWeight.w500)),
+          Text(value),
+        ],
       ),
     );
   }
@@ -566,12 +679,13 @@ class _ProducaoScreenState extends State<ProducaoScreen>
                         ),
                         ElevatedButton.icon(
                           onPressed: () {
-                            Navigator.pop(context);
                             _showDeleteConfirmationDialog(
                               context,
                               'Excluir Fórmula',
                               'Deseja realmente excluir a fórmula "${formula.nome}"? Esta ação não pode ser desfeita.',
                               () => viewModel.excluirFormula(formula.id),
+                              viewModel: viewModel,
+                              entityType: 'formula',
                             );
                           },
                           icon: const Icon(Icons.delete, size: 18),
@@ -1332,93 +1446,6 @@ class _ProducaoScreenState extends State<ProducaoScreen>
               }
             },
             child: const Text('Atualizar'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showDeleteConfirmationDialog(
-    BuildContext context,
-    String title,
-    String message,
-    VoidCallback onConfirm,
-  ) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(title),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () {
-              Navigator.pop(context);
-              onConfirm();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Fórmula excluída com sucesso')),
-              );
-            },
-            child: const Text('Excluir'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildInfoSection({
-    required String title,
-    required List<Widget> children,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          title,
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: AppTheme.primaryDarkColor,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Card(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: children,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildInfoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4.0),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 120,
-            child: Text(
-              '$label:',
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-          ),
-          Expanded(
-            child: Text(value),
           ),
         ],
       ),

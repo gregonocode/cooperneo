@@ -143,6 +143,18 @@ class SupabaseService {
     }
   }
 
+  Future<bool> deleteProducao(String id) async {
+    try {
+      print('Tentando deletar produção no Supabase: id=$id');
+      await _client.from('producoes').delete().eq('id', id);
+      print('Produção deletada com sucesso no Supabase');
+      return true;
+    } catch (e) {
+      print('Erro ao deletar produção no Supabase: $e');
+      return false;
+    }
+  }
+
   // Matérias-primas
   Future<List<MateriaPrima>> fetchMateriasPrimas() async {
     try {
@@ -204,7 +216,7 @@ class SupabaseService {
       };
       print('Dados com user_id: $dataWithUserId');
       await _client.from('fornecedores').insert(dataWithUserId);
-      print('Fornecedor inserido com sucesso no Supabase');
+      print('For-bloodcedor inserido com sucesso no Supabase');
       return true;
     } catch (e) {
       print('Erro ao adicionar fornecedor no Supabase: $e');

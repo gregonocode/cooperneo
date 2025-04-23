@@ -295,4 +295,61 @@ class ProducaoViewModel extends ChangeNotifier {
       return false;
     }
   }
+
+  Future<bool> excluirProducao(String id) async {
+    try {
+      print('Excluindo produção: id=$id');
+      final producao = _producoes.firstWhereOrNull((p) => p.id == id);
+      if (producao == null) {
+        _errorMessage = 'Produção não encontrada: $id';
+        print('Erro: $_errorMessage');
+        notifyListeners();
+        return false;
+      }
+
+      // Reverter o consumo de matérias-primas
+      for (var entry in producao.materiaPrimaConsumida.entries) {
+        final materiaPrimaId = entry.key;
+        final quantidadeConsumida = entry.value;
+        final materiaPrima =
+            _materiasPrimas.firstWhereOrNull((mp) => mp.id == materiaPrimaId);
+        if (materiaPrima == null) {
+          print('Matéria-prima não encontrada para reversão: $materiaPrimaId');
+          continue;
+        }
+        print(
+            'Reverting estoque para ${materiaPrima.nome}: ${materiaPrima.estoqueAtual} + $quantidadeConsumida');
+        final success = await _supabaseService.updateMateriaPrima(
+          int.parse(materiaPrimaId),
+          {'estoque_atual': materiaPrima.estoqueAtual + quantidadeConsumida},
+        );
+        if (!success) {
+          _errorMessage = 'Erro ao reverter estoque para ${materiaPrima.nome}';
+          print('Erro: $_errorMessage');
+          notifyListeners();
+          return false;
+        }
+        print('Estoque revertido para ${materiaPrima.nome}');
+      }
+
+      // Excluir a produção
+      final success = await _supabaseService.deleteProducao(id);
+      if (success) {
+        print('Produção excluída com sucesso. Recarregando dados...');
+        await carregarDados();
+        _errorMessage = null;
+        notifyListeners();
+        return true;
+      }
+      _errorMessage = 'Erro ao excluir produção no Supabase';
+      print('Erro: $_errorMessage');
+      notifyListeners();
+      return false;
+    } catch (e) {
+      _errorMessage = 'Erro ao excluir produção: $e';
+      print('Erro: $_errorMessage');
+      notifyListeners();
+      return false;
+    }
+  }
 }
