@@ -469,7 +469,6 @@ class _RelatoriosScreenState extends State<RelatoriosScreen>
       final pdfBytes = await viewModel.gerarRelatorioPersonalizadoPDF(
         _dataInicio,
         _dataFim,
-        'Relatório de Produção',
       );
       Navigator.pop(context); // Fechar dialog de carregamento
       _showReportOptionsDialog(context, pdfBytes);
@@ -611,4 +610,3 @@ class _RelatoriosScreenState extends State<RelatoriosScreen>
     );
   }
 }
-

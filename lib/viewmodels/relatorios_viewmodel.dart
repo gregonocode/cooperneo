@@ -99,12 +99,14 @@ class RelatoriosViewModel extends ChangeNotifier {
             p.dataProducao.day == data.day)
         .toList();
 
-    final List<pw.TableRow> tableRows = [];
+    final List<pw.Widget> productionBlocks = [];
 
     for (final producao in producoesDoDia) {
       final formula = getFormulaPorId(producao.formulaId);
+      final List<pw.TableRow> rows = [];
 
-      tableRows.add(
+      // Linha da fórmula
+      rows.add(
         pw.TableRow(
           decoration: const pw.BoxDecoration(
             color: PdfColors.grey200,
@@ -117,7 +119,7 @@ class RelatoriosViewModel extends ChangeNotifier {
                 formula?.nome ?? 'Desconhecida',
                 style: pw.TextStyle(
                   fontWeight: pw.FontWeight.bold,
-                  font: robotoFont,
+                  font: robotoFontBold,
                 ),
               ),
             ),
@@ -126,7 +128,7 @@ class RelatoriosViewModel extends ChangeNotifier {
               alignment: pw.Alignment.center,
               child: pw.Text(
                 producao.loteProducao,
-                style: pw.TextStyle(font: robotoFont),
+                style: pw.TextStyle(font: robotoFontBold),
               ),
             ),
             pw.Container(
@@ -134,17 +136,18 @@ class RelatoriosViewModel extends ChangeNotifier {
               alignment: pw.Alignment.centerRight,
               child: pw.Text(
                 '${producao.quantidadeProduzida.toStringAsFixed(2)} btd',
-                style: pw.TextStyle(font: robotoFont),
+                style: pw.TextStyle(font: robotoFontBold),
               ),
             ),
           ],
         ),
       );
 
+      // Linhas dos componentes
       if (formula != null && formula.componentes.isNotEmpty) {
         for (final componente in formula.componentes) {
           final materiaPrima = getMateriaPrimaPorId(componente.materiaPrimaId);
-          tableRows.add(
+          rows.add(
             pw.TableRow(
               children: [
                 pw.Container(
@@ -178,13 +181,24 @@ class RelatoriosViewModel extends ChangeNotifier {
         }
       }
 
-      tableRows.add(
-        pw.TableRow(
-          decoration: const pw.BoxDecoration(color: PdfColors.white),
+      // Adiciona a tabela da produção como um bloco indivisível
+      productionBlocks.add(
+        pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
-            pw.SizedBox(height: 10),
-            pw.SizedBox(),
-            pw.SizedBox(),
+            pw.Table(
+              border: pw.TableBorder.all(
+                color: PdfColors.grey400,
+                width: 0.5,
+              ),
+              children: rows,
+              columnWidths: {
+                0: pw.FlexColumnWidth(3),
+                1: pw.FlexColumnWidth(2),
+                2: pw.FlexColumnWidth(2),
+              },
+            ),
+            pw.SizedBox(height: 10), // Espaço entre blocos de produção
           ],
         ),
       );
@@ -427,7 +441,7 @@ class RelatoriosViewModel extends ChangeNotifier {
             ),
           ),
           pw.SizedBox(height: 20),
-          if (tableRows.isEmpty)
+          if (productionBlocks.isEmpty)
             pw.Container(
               padding: const pw.EdgeInsets.all(16),
               decoration: pw.BoxDecoration(
@@ -443,62 +457,68 @@ class RelatoriosViewModel extends ChangeNotifier {
               ),
             )
           else
-            pw.Table(
-              border: pw.TableBorder.all(
-                color: PdfColors.grey400,
-                width: 0.5,
-              ),
+            pw.Column(
               children: [
-                pw.TableRow(
-                  decoration: const pw.BoxDecoration(
-                    color: PdfColors.amber100,
+                // Cabeçalho da tabela
+                pw.Table(
+                  border: pw.TableBorder.all(
+                    color: PdfColors.grey400,
+                    width: 0.5,
                   ),
                   children: [
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.center,
-                      child: pw.Text(
-                        'Fórmula / Matéria-Prima',
-                        style: pw.TextStyle(
-                          fontSize: 12,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColors.black,
-                        ),
+                    pw.TableRow(
+                      decoration: const pw.BoxDecoration(
+                        color: PdfColors.amber100,
                       ),
-                    ),
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.center,
-                      child: pw.Text(
-                        'Lote',
-                        style: pw.TextStyle(
-                          fontSize: 12,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColors.black,
+                      children: [
+                        pw.Container(
+                          padding: const pw.EdgeInsets.all(8),
+                          alignment: pw.Alignment.center,
+                          child: pw.Text(
+                            'Fórmula / Matéria-Prima',
+                            style: pw.TextStyle(
+                              fontSize: 12,
+                              fontWeight: pw.FontWeight.bold,
+                              color: PdfColors.black,
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.center,
-                      child: pw.Text(
-                        'Quantidade',
-                        style: pw.TextStyle(
-                          fontSize: 12,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColors.black,
+                        pw.Container(
+                          padding: const pw.EdgeInsets.all(8),
+                          alignment: pw.Alignment.center,
+                          child: pw.Text(
+                            'Lote',
+                            style: pw.TextStyle(
+                              fontSize: 12,
+                              fontWeight: pw.FontWeight.bold,
+                              color: PdfColors.black,
+                            ),
+                          ),
                         ),
-                      ),
+                        pw.Container(
+                          padding: const pw.EdgeInsets.all(8),
+                          alignment: pw.Alignment.center,
+                          child: pw.Text(
+                            'Quantidade',
+                            style: pw.TextStyle(
+                              fontSize: 12,
+                              fontWeight: pw.FontWeight.bold,
+                              color: PdfColors.black,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
+                  columnWidths: {
+                    0: pw.FlexColumnWidth(3),
+                    1: pw.FlexColumnWidth(2),
+                    2: pw.FlexColumnWidth(2),
+                  },
                 ),
-                ...tableRows,
+                // Blocos de produção
+                ...productionBlocks,
               ],
-              columnWidths: {
-                0: pw.FlexColumnWidth(3),
-                1: pw.FlexColumnWidth(2),
-                2: pw.FlexColumnWidth(2),
-              },
             ),
         ],
       ),
@@ -523,12 +543,14 @@ class RelatoriosViewModel extends ChangeNotifier {
             p.dataProducao.isBefore(fimSemana.add(const Duration(days: 1))))
         .toList();
 
-    final List<pw.TableRow> tableRows = [];
+    final List<pw.Widget> productionBlocks = [];
 
     for (final producao in producoesDaSemana) {
       final formula = getFormulaPorId(producao.formulaId);
+      final List<pw.TableRow> rows = [];
 
-      tableRows.add(
+      // Linha da fórmula
+      rows.add(
         pw.TableRow(
           decoration: const pw.BoxDecoration(
             color: PdfColors.grey200,
@@ -541,7 +563,7 @@ class RelatoriosViewModel extends ChangeNotifier {
                 formula?.nome ?? 'Desconhecida',
                 style: pw.TextStyle(
                   fontWeight: pw.FontWeight.bold,
-                  font: robotoFont,
+                  font: robotoFontBold,
                 ),
               ),
             ),
@@ -550,7 +572,7 @@ class RelatoriosViewModel extends ChangeNotifier {
               alignment: pw.Alignment.center,
               child: pw.Text(
                 producao.loteProducao,
-                style: pw.TextStyle(font: robotoFont),
+                style: pw.TextStyle(font: robotoFontBold),
               ),
             ),
             pw.Container(
@@ -558,17 +580,18 @@ class RelatoriosViewModel extends ChangeNotifier {
               alignment: pw.Alignment.centerRight,
               child: pw.Text(
                 '${producao.quantidadeProduzida.toStringAsFixed(2)} btd',
-                style: pw.TextStyle(font: robotoFont),
+                style: pw.TextStyle(font: robotoFontBold),
               ),
             ),
           ],
         ),
       );
 
+      // Linhas dos componentes
       if (formula != null && formula.componentes.isNotEmpty) {
         for (final componente in formula.componentes) {
           final materiaPrima = getMateriaPrimaPorId(componente.materiaPrimaId);
-          tableRows.add(
+          rows.add(
             pw.TableRow(
               children: [
                 pw.Container(
@@ -601,6 +624,28 @@ class RelatoriosViewModel extends ChangeNotifier {
           );
         }
       }
+
+      // Adiciona a tabela da produção como um bloco indivisível
+      productionBlocks.add(
+        pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Table(
+              border: pw.TableBorder.all(
+                color: PdfColors.grey400,
+                width: 0.5,
+              ),
+              children: rows,
+              columnWidths: {
+                0: pw.FlexColumnWidth(3),
+                1: pw.FlexColumnWidth(2),
+                2: pw.FlexColumnWidth(2),
+              },
+            ),
+            pw.SizedBox(height: 10), // Espaço entre blocos de produção
+          ],
+        ),
+      );
     }
 
     pdfDoc.addPage(
@@ -843,7 +888,7 @@ class RelatoriosViewModel extends ChangeNotifier {
             ),
           ),
           pw.SizedBox(height: 20),
-          if (tableRows.isEmpty)
+          if (productionBlocks.isEmpty)
             pw.Container(
               padding: const pw.EdgeInsets.all(16),
               decoration: pw.BoxDecoration(
@@ -859,62 +904,68 @@ class RelatoriosViewModel extends ChangeNotifier {
               ),
             )
           else
-            pw.Table(
-              border: pw.TableBorder.all(
-                color: PdfColors.grey400,
-                width: 0.5,
-              ),
+            pw.Column(
               children: [
-                pw.TableRow(
-                  decoration: const pw.BoxDecoration(
-                    color: PdfColors.amber100,
+                // Cabeçalho da tabela
+                pw.Table(
+                  border: pw.TableBorder.all(
+                    color: PdfColors.grey400,
+                    width: 0.5,
                   ),
                   children: [
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.center,
-                      child: pw.Text(
-                        'Fórmula / Matéria-Prima',
-                        style: pw.TextStyle(
-                          fontSize: 12,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColors.black,
-                        ),
+                    pw.TableRow(
+                      decoration: const pw.BoxDecoration(
+                        color: PdfColors.amber100,
                       ),
-                    ),
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.center,
-                      child: pw.Text(
-                        'Lote',
-                        style: pw.TextStyle(
-                          fontSize: 12,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColors.black,
+                      children: [
+                        pw.Container(
+                          padding: const pw.EdgeInsets.all(8),
+                          alignment: pw.Alignment.center,
+                          child: pw.Text(
+                            'Fórmula / Matéria-Prima',
+                            style: pw.TextStyle(
+                              fontSize: 12,
+                              fontWeight: pw.FontWeight.bold,
+                              color: PdfColors.black,
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.center,
-                      child: pw.Text(
-                        'Quantidade',
-                        style: pw.TextStyle(
-                          fontSize: 12,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColors.black,
+                        pw.Container(
+                          padding: const pw.EdgeInsets.all(8),
+                          alignment: pw.Alignment.center,
+                          child: pw.Text(
+                            'Lote',
+                            style: pw.TextStyle(
+                              fontSize: 12,
+                              fontWeight: pw.FontWeight.bold,
+                              color: PdfColors.black,
+                            ),
+                          ),
                         ),
-                      ),
+                        pw.Container(
+                          padding: const pw.EdgeInsets.all(8),
+                          alignment: pw.Alignment.center,
+                          child: pw.Text(
+                            'Quantidade',
+                            style: pw.TextStyle(
+                              fontSize: 12,
+                              fontWeight: pw.FontWeight.bold,
+                              color: PdfColors.black,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
+                  columnWidths: {
+                    0: pw.FlexColumnWidth(3),
+                    1: pw.FlexColumnWidth(2),
+                    2: pw.FlexColumnWidth(2),
+                  },
                 ),
-                ...tableRows,
+                // Blocos de produção
+                ...productionBlocks,
               ],
-              columnWidths: {
-                0: pw.FlexColumnWidth(3),
-                1: pw.FlexColumnWidth(2),
-                2: pw.FlexColumnWidth(2),
-              },
             ),
         ],
       ),
@@ -924,8 +975,7 @@ class RelatoriosViewModel extends ChangeNotifier {
   }
 
   Future<Uint8List> gerarRelatorioPersonalizadoPDF(
-      DateTime inicio, DateTime fim,
-      [String? empresa]) async {
+      DateTime dataInicio, DateTime dataFim) async {
     final pdfDoc = pw.Document();
     final fonts = await _loadRobotoFonts(); // Carrega o mapa de fontes
     final robotoFont = fonts['regular']!; // Fonte regular
@@ -933,16 +983,19 @@ class RelatoriosViewModel extends ChangeNotifier {
 
     final producoesPeriodo = _producoes
         .where((p) =>
-            p.dataProducao.isAfter(inicio.subtract(const Duration(days: 1))) &&
-            p.dataProducao.isBefore(fim.add(const Duration(days: 1))))
+            p.dataProducao.isAfter(
+                dataInicio.subtract(const Duration(microseconds: 1))) &&
+            p.dataProducao.isBefore(dataFim.add(const Duration(days: 1))))
         .toList();
 
-    final List<pw.TableRow> tableRows = [];
+    final List<pw.Widget> productionBlocks = [];
 
     for (final producao in producoesPeriodo) {
       final formula = getFormulaPorId(producao.formulaId);
+      final List<pw.TableRow> rows = [];
 
-      tableRows.add(
+      // Linha da fórmula
+      rows.add(
         pw.TableRow(
           decoration: const pw.BoxDecoration(
             color: PdfColors.grey200,
@@ -955,7 +1008,7 @@ class RelatoriosViewModel extends ChangeNotifier {
                 formula?.nome ?? 'Desconhecida',
                 style: pw.TextStyle(
                   fontWeight: pw.FontWeight.bold,
-                  font: robotoFont,
+                  font: robotoFontBold,
                 ),
               ),
             ),
@@ -964,7 +1017,7 @@ class RelatoriosViewModel extends ChangeNotifier {
               alignment: pw.Alignment.center,
               child: pw.Text(
                 producao.loteProducao,
-                style: pw.TextStyle(font: robotoFont),
+                style: pw.TextStyle(font: robotoFontBold),
               ),
             ),
             pw.Container(
@@ -972,17 +1025,18 @@ class RelatoriosViewModel extends ChangeNotifier {
               alignment: pw.Alignment.centerRight,
               child: pw.Text(
                 '${producao.quantidadeProduzida.toStringAsFixed(2)} btd',
-                style: pw.TextStyle(font: robotoFont),
+                style: pw.TextStyle(font: robotoFontBold),
               ),
             ),
           ],
         ),
       );
 
+      // Linhas dos componentes
       if (formula != null && formula.componentes.isNotEmpty) {
         for (final componente in formula.componentes) {
           final materiaPrima = getMateriaPrimaPorId(componente.materiaPrimaId);
-          tableRows.add(
+          rows.add(
             pw.TableRow(
               children: [
                 pw.Container(
@@ -1015,6 +1069,28 @@ class RelatoriosViewModel extends ChangeNotifier {
           );
         }
       }
+
+      // Adiciona a tabela da produção como um bloco indivisível
+      productionBlocks.add(
+        pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Table(
+              border: pw.TableBorder.all(
+                color: PdfColors.grey400,
+                width: 0.5,
+              ),
+              children: rows,
+              columnWidths: {
+                0: pw.FlexColumnWidth(3),
+                1: pw.FlexColumnWidth(2),
+                2: pw.FlexColumnWidth(2),
+              },
+            ),
+            pw.SizedBox(height: 10), // Espaço entre blocos de produção
+          ],
+        ),
+      );
     }
 
     pdfDoc.addPage(
@@ -1031,7 +1107,7 @@ class RelatoriosViewModel extends ChangeNotifier {
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
                 pw.Text(
-                  'Controle de Produção Mistura/Ensaque',
+                  'Controle de Produção Personalizado-Mistura/Ensaque',
                   style: pw.TextStyle(
                     fontSize: 18,
                     fontWeight: pw.FontWeight.bold,
@@ -1062,14 +1138,11 @@ class RelatoriosViewModel extends ChangeNotifier {
                         ),
                       ),
                     ),
-                    pw.Container(
-                      alignment: pw.Alignment.centerLeft,
-                      child: pw.Text(
-                        'Data: ${DateFormat('dd/MM/yyyy').format(inicio)}',
-                        style: pw.TextStyle(
-                          fontSize: 12,
-                          font: robotoFont,
-                        ),
+                    pw.Text(
+                      'Data: ${DateFormat('dd/MM/yyyy').format(DateTime.now())}',
+                      style: pw.TextStyle(
+                        fontSize: 12,
+                        font: robotoFont,
                       ),
                     ),
                   ],
@@ -1248,7 +1321,7 @@ class RelatoriosViewModel extends ChangeNotifier {
               borderRadius: pw.BorderRadius.circular(8),
             ),
             child: pw.Text(
-              'Período: ${DateFormat('dd/MM/yyyy').format(inicio)} a ${DateFormat('dd/MM/yyyy').format(fim)}',
+              'Período: ${DateFormat('dd/MM/yyyy').format(dataInicio)} a ${DateFormat('dd/MM/yyyy').format(dataFim)}',
               style: pw.TextStyle(
                 fontSize: 10,
                 fontWeight: pw.FontWeight.bold,
@@ -1257,7 +1330,7 @@ class RelatoriosViewModel extends ChangeNotifier {
             ),
           ),
           pw.SizedBox(height: 20),
-          if (tableRows.isEmpty)
+          if (productionBlocks.isEmpty)
             pw.Container(
               padding: const pw.EdgeInsets.all(16),
               decoration: pw.BoxDecoration(
@@ -1273,62 +1346,68 @@ class RelatoriosViewModel extends ChangeNotifier {
               ),
             )
           else
-            pw.Table(
-              border: pw.TableBorder.all(
-                color: PdfColors.grey400,
-                width: 0.5,
-              ),
+            pw.Column(
               children: [
-                pw.TableRow(
-                  decoration: const pw.BoxDecoration(
-                    color: PdfColors.amber100,
+                // Cabeçalho da tabela
+                pw.Table(
+                  border: pw.TableBorder.all(
+                    color: PdfColors.grey400,
+                    width: 0.5,
                   ),
                   children: [
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.center,
-                      child: pw.Text(
-                        'Fórmula / Matéria-Prima',
-                        style: pw.TextStyle(
-                          fontSize: 12,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColors.black,
-                        ),
+                    pw.TableRow(
+                      decoration: const pw.BoxDecoration(
+                        color: PdfColors.amber100,
                       ),
-                    ),
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.center,
-                      child: pw.Text(
-                        'Lote',
-                        style: pw.TextStyle(
-                          fontSize: 12,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColors.black,
+                      children: [
+                        pw.Container(
+                          padding: const pw.EdgeInsets.all(8),
+                          alignment: pw.Alignment.center,
+                          child: pw.Text(
+                            'Fórmula / Matéria-Prima',
+                            style: pw.TextStyle(
+                              fontSize: 12,
+                              fontWeight: pw.FontWeight.bold,
+                              color: PdfColors.black,
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.center,
-                      child: pw.Text(
-                        'Quantidade',
-                        style: pw.TextStyle(
-                          fontSize: 12,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColors.black,
+                        pw.Container(
+                          padding: const pw.EdgeInsets.all(8),
+                          alignment: pw.Alignment.center,
+                          child: pw.Text(
+                            'Lote',
+                            style: pw.TextStyle(
+                              fontSize: 12,
+                              fontWeight: pw.FontWeight.bold,
+                              color: PdfColors.black,
+                            ),
+                          ),
                         ),
-                      ),
+                        pw.Container(
+                          padding: const pw.EdgeInsets.all(8),
+                          alignment: pw.Alignment.center,
+                          child: pw.Text(
+                            'Quantidade',
+                            style: pw.TextStyle(
+                              fontSize: 12,
+                              fontWeight: pw.FontWeight.bold,
+                              color: PdfColors.black,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
+                  columnWidths: {
+                    0: pw.FlexColumnWidth(3),
+                    1: pw.FlexColumnWidth(2),
+                    2: pw.FlexColumnWidth(2),
+                  },
                 ),
-                ...tableRows,
+                // Blocos de produção
+                ...productionBlocks,
               ],
-              columnWidths: {
-                0: pw.FlexColumnWidth(3),
-                1: pw.FlexColumnWidth(2),
-                2: pw.FlexColumnWidth(2),
-              },
             ),
         ],
       ),
