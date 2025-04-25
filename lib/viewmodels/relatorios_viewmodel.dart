@@ -87,17 +87,46 @@ class RelatoriosViewModel extends ChangeNotifier {
   }
 
   Future<Uint8List> gerarRelatorioDiarioPDF(DateTime data) async {
-    final pdfDoc = pw.Document();
-    final fonts = await _loadRobotoFonts(); // Carrega o mapa de fontes
-    final robotoFont = fonts['regular']!; // Fonte regular
-    final robotoFontBold = fonts['bold']!; // Fonte bold
+    final pdfDoc = pw.Document(
+      theme: pw.ThemeData.withFont(
+        base: pw.Font.helvetica(),
+        bold: pw.Font.helveticaBold(),
+      ),
+    );
+
+    // Carregar fontes com validação
+    Map<String, pw.Font> fonts;
+    try {
+      fonts = await _loadRobotoFonts();
+      print('Fontes Roboto carregadas com sucesso: ${fonts.keys}');
+    } catch (e) {
+      print('Erro ao carregar fontes Roboto: $e');
+      fonts = {
+        'regular': pw.Font.helvetica(),
+        'bold': pw.Font.helveticaBold(),
+      };
+    }
+    final robotoFont = fonts['regular']!;
+    final robotoFontBold = fonts['bold']!;
 
     final producoesDoDia = _producoes
         .where((p) =>
-            p.dataProducao.year == data.year &&
+            p.dataProducao.day == data.day &&
             p.dataProducao.month == data.month &&
-            p.dataProducao.day == data.day)
+            p.dataProducao.year == data.year)
         .toList();
+
+    // Estimar número total de linhas (produções + matérias-primas)
+    int totalLinhas = producoesDoDia.length;
+    for (final producao in producoesDoDia) {
+      totalLinhas += producao.materiaPrimaConsumida.length;
+    }
+
+    // Limitar número de linhas para evitar excesso de páginas
+    if (totalLinhas > 1000) {
+      throw Exception(
+          'Dia selecionado contém muitas entradas ($totalLinhas linhas, incluindo ${producoesDoDia.length} produções). Por favor, selecione um dia com menos produções ou contate o suporte.');
+    }
 
     final List<pw.Widget> productionBlocks = [];
 
@@ -113,66 +142,81 @@ class RelatoriosViewModel extends ChangeNotifier {
           ),
           children: [
             pw.Container(
-              padding: const pw.EdgeInsets.all(8),
+              padding: const pw.EdgeInsets.all(6),
               alignment: pw.Alignment.center,
               child: pw.Text(
                 formula?.nome ?? 'Desconhecida',
                 style: pw.TextStyle(
                   fontWeight: pw.FontWeight.bold,
                   font: robotoFontBold,
+                  fontSize: 10,
                 ),
               ),
             ),
             pw.Container(
-              padding: const pw.EdgeInsets.all(8),
+              padding: const pw.EdgeInsets.all(6),
               alignment: pw.Alignment.center,
               child: pw.Text(
                 producao.loteProducao,
-                style: pw.TextStyle(font: robotoFontBold),
+                style: pw.TextStyle(
+                  font: robotoFontBold,
+                  fontSize: 10,
+                ),
               ),
             ),
             pw.Container(
-              padding: const pw.EdgeInsets.all(8),
+              padding: const pw.EdgeInsets.all(6),
               alignment: pw.Alignment.centerRight,
               child: pw.Text(
                 '${producao.quantidadeProduzida.toStringAsFixed(2)} btd',
-                style: pw.TextStyle(font: robotoFontBold),
+                style: pw.TextStyle(
+                  font: robotoFontBold,
+                  fontSize: 10,
+                ),
               ),
             ),
           ],
         ),
       );
 
-      // Linhas dos componentes
-      if (formula != null && formula.componentes.isNotEmpty) {
-        for (final componente in formula.componentes) {
-          final materiaPrima = getMateriaPrimaPorId(componente.materiaPrimaId);
+      // Linhas das matérias-primas consumidas
+      if (producao.materiaPrimaConsumida.isNotEmpty) {
+        for (final entry in producao.materiaPrimaConsumida.entries) {
+          final materiaPrima = getMateriaPrimaPorId(entry.key);
           rows.add(
             pw.TableRow(
               children: [
                 pw.Container(
-                  padding: const pw.EdgeInsets.all(8),
+                  padding: const pw.EdgeInsets.all(6),
                   alignment: pw.Alignment.centerLeft,
                   child: pw.Text(
                     '  ${materiaPrima?.nome ?? 'Desconhecida'}',
-                    style: pw.TextStyle(font: robotoFont),
+                    style: pw.TextStyle(
+                      font: robotoFont,
+                      fontSize: 9,
+                    ),
                   ),
                 ),
                 pw.Container(
-                  padding: const pw.EdgeInsets.all(8),
+                  padding: const pw.EdgeInsets.all(6),
                   alignment: pw.Alignment.center,
                   child: pw.Text(
-                    getNumeroLoteParaMateriaPrima(
-                        componente.materiaPrimaId, producao),
-                    style: pw.TextStyle(font: robotoFont),
+                    getNumeroLoteParaMateriaPrima(entry.key, producao),
+                    style: pw.TextStyle(
+                      font: robotoFont,
+                      fontSize: 9,
+                    ),
                   ),
                 ),
                 pw.Container(
-                  padding: const pw.EdgeInsets.all(8),
+                  padding: const pw.EdgeInsets.all(6),
                   alignment: pw.Alignment.centerRight,
                   child: pw.Text(
-                    '${componente.quantidade.toStringAsFixed(2)} ${componente.unidadeMedida}',
-                    style: pw.TextStyle(font: robotoFont),
+                    '${entry.value.toStringAsFixed(2)} ${materiaPrima?.unidadeMedida ?? ''}',
+                    style: pw.TextStyle(
+                      font: robotoFont,
+                      fontSize: 9,
+                    ),
                   ),
                 ),
               ],
@@ -181,7 +225,7 @@ class RelatoriosViewModel extends ChangeNotifier {
         }
       }
 
-      // Adiciona a tabela da produção como um bloco indivisível
+      // Adiciona a tabela da produção
       productionBlocks.add(
         pw.Column(
           crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -198,340 +242,403 @@ class RelatoriosViewModel extends ChangeNotifier {
                 2: pw.FlexColumnWidth(2),
               },
             ),
-            pw.SizedBox(height: 10), // Espaço entre blocos de produção
+            pw.SizedBox(height: 5),
           ],
         ),
       );
     }
 
-    pdfDoc.addPage(
-      pw.MultiPage(
-        pageTheme: pw.PageTheme(
-          margin: pw.EdgeInsets.all(32),
-          theme: pw.ThemeData.withFont(base: robotoFont),
-        ),
-        header: (pw.Context context) => pw.Column(
-          crossAxisAlignment: pw.CrossAxisAlignment.start,
-          children: [
-            pw.Row(
-              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                pw.Text(
-                  'Controle de Produção Diário-Mistura/Ensaque',
-                  style: pw.TextStyle(
-                    fontSize: 18,
-                    fontWeight: pw.FontWeight.bold,
-                    font: robotoFont,
+    try {
+      pdfDoc.addPage(
+        pw.MultiPage(
+          maxPages: 100,
+          pageTheme: pw.PageTheme(
+            margin: pw.EdgeInsets.all(20),
+            theme: pw.ThemeData.withFont(
+              base: robotoFont,
+              bold: robotoFontBold,
+            ),
+          ),
+          header: (pw.Context context) => pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Text(
+                    'Controle de Produção Diário-Mistura/Ensaque',
+                    style: pw.TextStyle(
+                      fontSize: 18,
+                      fontWeight: pw.FontWeight.bold,
+                      font: robotoFont,
+                    ),
                   ),
-                ),
-                pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  children: [
-                    pw.Container(
-                      alignment: pw.Alignment.centerLeft,
-                      child: pw.RichText(
-                        text: pw.TextSpan(
-                          text: 'N° Documento: ',
-                          style: pw.TextStyle(
-                            fontSize: 12,
-                            font: robotoFont,
-                          ),
-                          children: [
-                            pw.TextSpan(
-                              text: 'BPF 18',
-                              style: pw.TextStyle(
-                                fontSize: 12,
-                                font: robotoFontBold,
-                              ),
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Container(
+                        alignment: pw.Alignment.centerLeft,
+                        child: pw.RichText(
+                          text: pw.TextSpan(
+                            text: 'N° Documento: ',
+                            style: pw.TextStyle(
+                              fontSize: 12,
+                              font: robotoFont,
                             ),
-                          ],
+                            children: [
+                              pw.TextSpan(
+                                text: 'BPF 18',
+                                style: pw.TextStyle(
+                                  fontSize: 12,
+                                  font: robotoFontBold,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
+                      pw.Text(
+                        'Data: 25/04/2025',
+                        style: pw.TextStyle(
+                          fontSize: 12,
+                          font: robotoFont,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              pw.SizedBox(height: 10),
+              pw.Container(
+                padding: const pw.EdgeInsets.only(bottom: 6),
+                decoration: const pw.BoxDecoration(
+                  border: pw.Border(
+                      bottom: pw.BorderSide(color: PdfColors.grey300)),
+                ),
+                child: pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
                     pw.Text(
-                      'Data: ${DateFormat('dd/MM/yyyy').format(data)}',
+                      'Página ${context.pageNumber} de ${context.pagesCount}',
                       style: pw.TextStyle(
-                        fontSize: 12,
+                        fontSize: 8,
+                        color: PdfColors.grey600,
                         font: robotoFont,
                       ),
                     ),
                   ],
                 ),
-              ],
-            ),
-            pw.SizedBox(height: 16),
-            pw.Container(
-              padding: const pw.EdgeInsets.only(bottom: 8),
-              decoration: const pw.BoxDecoration(
-                border:
-                    pw.Border(bottom: pw.BorderSide(color: PdfColors.grey300)),
               ),
-              child: pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            ],
+          ),
+          footer: (pw.Context context) => pw.Column(
+            children: [
+              pw.SizedBox(height: 10),
+              pw.Table(
+                border: pw.TableBorder.all(
+                  color: PdfColors.grey400,
+                  width: 0.5,
+                ),
                 children: [
-                  pw.Text(
-                    'Página ${context.pageNumber} de ${context.pagesCount}',
-                    style: pw.TextStyle(fontSize: 10, color: PdfColors.grey600),
+                  pw.TableRow(
+                    decoration: const pw.BoxDecoration(
+                      color: PdfColors.amber100,
+                    ),
+                    children: [
+                      pw.Container(
+                        padding: const pw.EdgeInsets.all(6),
+                        alignment: pw.Alignment.center,
+                        child: pw.Text(
+                          'Execução',
+                          style: pw.TextStyle(
+                            fontSize: 10,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.black,
+                            font: robotoFontBold,
+                          ),
+                        ),
+                      ),
+                      pw.Container(
+                        padding: const pw.EdgeInsets.all(6),
+                        alignment: pw.Alignment.center,
+                        child: pw.Text(
+                          'Monitoramento',
+                          style: pw.TextStyle(
+                            fontSize: 10,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.black,
+                            font: robotoFontBold,
+                          ),
+                        ),
+                      ),
+                      pw.Container(
+                        padding: const pw.EdgeInsets.all(6),
+                        alignment: pw.Alignment.center,
+                        child: pw.Text(
+                          'Verificação',
+                          style: pw.TextStyle(
+                            fontSize: 10,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.black,
+                            font: robotoFontBold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  pw.TableRow(
+                    children: [
+                      pw.Container(
+                        padding: const pw.EdgeInsets.all(6),
+                        alignment: pw.Alignment.centerLeft,
+                        child: pw.Text(
+                          'Responsável: Helves P. Santos',
+                          style: pw.TextStyle(
+                            fontSize: 8,
+                            font: robotoFont,
+                          ),
+                        ),
+                      ),
+                      pw.Container(
+                        padding: const pw.EdgeInsets.all(6),
+                        alignment: pw.Alignment.centerLeft,
+                        child: pw.Text(
+                          'Responsável: Pedro Luiz ferreira',
+                          style: pw.TextStyle(
+                            fontSize: 8,
+                            font: robotoFont,
+                          ),
+                        ),
+                      ),
+                      pw.Container(
+                        padding: const pw.EdgeInsets.all(6),
+                        alignment: pw.Alignment.centerLeft,
+                        child: pw.Text(
+                          'Responsável: Franciele A. Santos',
+                          style: pw.TextStyle(
+                            fontSize: 8,
+                            font: robotoFont,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  pw.TableRow(
+                    children: [
+                      pw.Container(
+                        padding: const pw.EdgeInsets.all(6),
+                        alignment: pw.Alignment.centerLeft,
+                        child: pw.Text(
+                          'Data:',
+                          style: pw.TextStyle(
+                            fontSize: 8,
+                            font: robotoFont,
+                          ),
+                        ),
+                      ),
+                      pw.Container(
+                        padding: const pw.EdgeInsets.all(6),
+                        alignment: pw.Alignment.centerLeft,
+                        child: pw.Text(
+                          'Data:',
+                          style: pw.TextStyle(
+                            fontSize: 8,
+                            font: robotoFont,
+                          ),
+                        ),
+                      ),
+                      pw.Container(
+                        padding: const pw.EdgeInsets.all(6),
+                        alignment: pw.Alignment.centerLeft,
+                        child: pw.Text(
+                          'Data:',
+                          style: pw.TextStyle(
+                            fontSize: 8,
+                            font: robotoFont,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  pw.TableRow(
+                    children: [
+                      pw.Container(
+                        padding: const pw.EdgeInsets.all(6),
+                        alignment: pw.Alignment.centerLeft,
+                        child: pw.Text(
+                          'Assinatura:',
+                          style: pw.TextStyle(
+                            fontSize: 8,
+                            font: robotoFont,
+                          ),
+                        ),
+                      ),
+                      pw.Container(
+                        padding: const pw.EdgeInsets.all(6),
+                        alignment: pw.Alignment.centerLeft,
+                        child: pw.Text(
+                          'Assinatura:',
+                          style: pw.TextStyle(
+                            fontSize: 8,
+                            font: robotoFont,
+                          ),
+                        ),
+                      ),
+                      pw.Container(
+                        padding: const pw.EdgeInsets.all(6),
+                        alignment: pw.Alignment.centerLeft,
+                        child: pw.Text(
+                          'Assinatura:',
+                          style: pw.TextStyle(
+                            fontSize: 8,
+                            font: robotoFont,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
+                columnWidths: {
+                  0: pw.FlexColumnWidth(1),
+                  1: pw.FlexColumnWidth(1),
+                  2: pw.FlexColumnWidth(1),
+                },
               ),
-            ),
-          ],
-        ),
-        footer: (pw.Context context) => pw.Column(
-          children: [
-            pw.SizedBox(height: 16),
-            pw.Table(
-              border: pw.TableBorder.all(
-                color: PdfColors.grey400,
-                width: 0.5,
-              ),
-              children: [
-                pw.TableRow(
-                  decoration: const pw.BoxDecoration(
-                    color: PdfColors.amber100,
-                  ),
-                  children: [
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.center,
-                      child: pw.Text(
-                        'Execução',
-                        style: pw.TextStyle(
-                          fontSize: 12,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColors.black,
-                        ),
-                      ),
-                    ),
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.center,
-                      child: pw.Text(
-                        'Monitoramento',
-                        style: pw.TextStyle(
-                          fontSize: 12,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColors.black,
-                        ),
-                      ),
-                    ),
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.center,
-                      child: pw.Text(
-                        'Verificação',
-                        style: pw.TextStyle(
-                          fontSize: 12,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColors.black,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                pw.TableRow(
-                  children: [
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.centerLeft,
-                      child: pw.Text(
-                        'Responsável: Helves P. Santos',
-                        style: pw.TextStyle(fontSize: 10, font: robotoFont),
-                      ),
-                    ),
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.centerLeft,
-                      child: pw.Text(
-                        'Responsável: Pedro Luiz ferreira',
-                        style: pw.TextStyle(fontSize: 10, font: robotoFont),
-                      ),
-                    ),
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.centerLeft,
-                      child: pw.Text(
-                        'Responsável: Franciele A. Santos',
-                        style: pw.TextStyle(fontSize: 10, font: robotoFont),
-                      ),
-                    ),
-                  ],
-                ),
-                pw.TableRow(
-                  children: [
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.centerLeft,
-                      child: pw.Text(
-                        'Data:',
-                        style: pw.TextStyle(fontSize: 10, font: robotoFont),
-                      ),
-                    ),
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.centerLeft,
-                      child: pw.Text(
-                        'Data:',
-                        style: pw.TextStyle(fontSize: 10, font: robotoFont),
-                      ),
-                    ),
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.centerLeft,
-                      child: pw.Text(
-                        'Data:',
-                        style: pw.TextStyle(fontSize: 10, font: robotoFont),
-                      ),
-                    ),
-                  ],
-                ),
-                pw.TableRow(
-                  children: [
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.centerLeft,
-                      child: pw.Text(
-                        'Assinatura:',
-                        style: pw.TextStyle(fontSize: 10, font: robotoFont),
-                      ),
-                    ),
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.centerLeft,
-                      child: pw.Text(
-                        'Assinatura:',
-                        style: pw.TextStyle(fontSize: 10, font: robotoFont),
-                      ),
-                    ),
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.centerLeft,
-                      child: pw.Text(
-                        'Assinatura:',
-                        style: pw.TextStyle(fontSize: 10, font: robotoFont),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-              columnWidths: {
-                0: pw.FlexColumnWidth(1),
-                1: pw.FlexColumnWidth(1),
-                2: pw.FlexColumnWidth(1),
-              },
-            ),
-          ],
-        ),
-        build: (pw.Context context) => [
-          pw.Container(
-            padding: const pw.EdgeInsets.all(16),
-            decoration: pw.BoxDecoration(
-              color: PdfColors.grey100,
-              borderRadius: pw.BorderRadius.circular(8),
-            ),
-            child: pw.Text(
-              'Data: ${DateFormat('dd/MM/yyyy').format(data)}',
-              style: pw.TextStyle(
-                fontSize: 10,
-                fontWeight: pw.FontWeight.bold,
-                color: PdfColors.black,
-              ),
-            ),
+            ],
           ),
-          pw.SizedBox(height: 20),
-          if (productionBlocks.isEmpty)
+          build: (pw.Context context) => [
             pw.Container(
-              padding: const pw.EdgeInsets.all(16),
+              padding: const pw.EdgeInsets.all(12),
               decoration: pw.BoxDecoration(
-                color: PdfColors.red100,
-                borderRadius: pw.BorderRadius.circular(8),
+                color: PdfColors.grey100,
+                borderRadius: pw.BorderRadius.circular(6),
               ),
               child: pw.Text(
-                'Nenhuma produção registrada neste dia.',
+                'Data: ${DateFormat('dd/MM/yyyy').format(data)}',
                 style: pw.TextStyle(
-                  fontSize: 14,
-                  color: PdfColors.red800,
+                  fontSize: 10,
+                  fontWeight: pw.FontWeight.bold,
+                  color: PdfColors.black,
+                  font: robotoFont,
                 ),
               ),
-            )
-          else
-            pw.Column(
-              children: [
-                // Cabeçalho da tabela
-                pw.Table(
-                  border: pw.TableBorder.all(
-                    color: PdfColors.grey400,
-                    width: 0.5,
-                  ),
-                  children: [
-                    pw.TableRow(
-                      decoration: const pw.BoxDecoration(
-                        color: PdfColors.amber100,
-                      ),
-                      children: [
-                        pw.Container(
-                          padding: const pw.EdgeInsets.all(8),
-                          alignment: pw.Alignment.center,
-                          child: pw.Text(
-                            'Fórmula / Matéria-Prima',
-                            style: pw.TextStyle(
-                              fontSize: 12,
-                              fontWeight: pw.FontWeight.bold,
-                              color: PdfColors.black,
-                            ),
-                          ),
-                        ),
-                        pw.Container(
-                          padding: const pw.EdgeInsets.all(8),
-                          alignment: pw.Alignment.center,
-                          child: pw.Text(
-                            'Lote',
-                            style: pw.TextStyle(
-                              fontSize: 12,
-                              fontWeight: pw.FontWeight.bold,
-                              color: PdfColors.black,
-                            ),
-                          ),
-                        ),
-                        pw.Container(
-                          padding: const pw.EdgeInsets.all(8),
-                          alignment: pw.Alignment.center,
-                          child: pw.Text(
-                            'Quantidade',
-                            style: pw.TextStyle(
-                              fontSize: 12,
-                              fontWeight: pw.FontWeight.bold,
-                              color: PdfColors.black,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                  columnWidths: {
-                    0: pw.FlexColumnWidth(3),
-                    1: pw.FlexColumnWidth(2),
-                    2: pw.FlexColumnWidth(2),
-                  },
-                ),
-                // Blocos de produção
-                ...productionBlocks,
-              ],
             ),
-        ],
-      ),
-    );
+            pw.SizedBox(height: 15),
+            if (productionBlocks.isEmpty)
+              pw.Container(
+                padding: const pw.EdgeInsets.all(12),
+                decoration: pw.BoxDecoration(
+                  color: PdfColors.red100,
+                  borderRadius: pw.BorderRadius.circular(6),
+                ),
+                child: pw.Text(
+                  'Nenhuma produção registrada neste dia.',
+                  style: pw.TextStyle(
+                    fontSize: 12,
+                    color: PdfColors.red800,
+                    font: robotoFont,
+                  ),
+                ),
+              )
+            else
+              pw.Column(
+                children: [
+                  pw.Table(
+                    border: pw.TableBorder.all(
+                      color: PdfColors.grey400,
+                      width: 0.5,
+                    ),
+                    children: [
+                      pw.TableRow(
+                        decoration: const pw.BoxDecoration(
+                          color: PdfColors.amber100,
+                        ),
+                        children: [
+                          pw.Container(
+                            padding: const pw.EdgeInsets.all(6),
+                            alignment: pw.Alignment.center,
+                            child: pw.Text(
+                              'Fórmula / Matéria-Prima',
+                              style: pw.TextStyle(
+                                fontSize: 10,
+                                fontWeight: pw.FontWeight.bold,
+                                color: PdfColors.black,
+                                font: robotoFontBold,
+                              ),
+                            ),
+                          ),
+                          pw.Container(
+                            padding: const pw.EdgeInsets.all(6),
+                            alignment: pw.Alignment.center,
+                            child: pw.Text(
+                              'Lote',
+                              style: pw.TextStyle(
+                                fontSize: 10,
+                                fontWeight: pw.FontWeight.bold,
+                                color: PdfColors.black,
+                                font: robotoFontBold,
+                              ),
+                            ),
+                          ),
+                          pw.Container(
+                            padding: const pw.EdgeInsets.all(6),
+                            alignment: pw.Alignment.center,
+                            child: pw.Text(
+                              'Quantidade',
+                              style: pw.TextStyle(
+                                fontSize: 10,
+                                fontWeight: pw.FontWeight.bold,
+                                color: PdfColors.black,
+                                font: robotoFontBold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    columnWidths: {
+                      0: pw.FlexColumnWidth(3),
+                      1: pw.FlexColumnWidth(2),
+                      2: pw.FlexColumnWidth(2),
+                    },
+                  ),
+                  ...productionBlocks,
+                ],
+              ),
+          ],
+        ),
+      );
+    } catch (e) {
+      throw Exception(
+          'Erro ao gerar relatório: Não foi possível gerar o PDF devido ao grande volume de dados ($totalLinhas linhas). Tente um dia com menos produções ou contate o suporte. Detalhes: $e');
+    }
 
     return await pdfDoc.save();
   }
 
   Future<Uint8List> gerarRelatorioSemanalPDF(DateTime data) async {
-    final pdfDoc = pw.Document();
-    final fonts = await _loadRobotoFonts(); // Carrega o mapa de fontes
-    final robotoFont = fonts['regular']!; // Fonte regular
-    final robotoFontBold = fonts['bold']!; // Fonte bold
+    final pdfDoc = pw.Document(
+      theme: pw.ThemeData.withFont(
+        base: pw.Font.helvetica(),
+        bold: pw.Font.helveticaBold(),
+      ),
+    );
+
+    // Carregar fontes com validação
+    Map<String, pw.Font> fonts;
+    try {
+      fonts = await _loadRobotoFonts();
+      print('Fontes Roboto carregadas com sucesso: ${fonts.keys}');
+    } catch (e) {
+      print('Erro ao carregar fontes Roboto: $e');
+      fonts = {
+        'regular': pw.Font.helvetica(),
+        'bold': pw.Font.helveticaBold(),
+      };
+    }
+    final robotoFont = fonts['regular']!;
+    final robotoFontBold = fonts['bold']!;
 
     final inicioSemana = data.subtract(Duration(days: data.weekday - 1));
     final fimSemana = inicioSemana.add(const Duration(days: 6));
@@ -542,6 +649,18 @@ class RelatoriosViewModel extends ChangeNotifier {
                 .isAfter(inicioSemana.subtract(const Duration(days: 1))) &&
             p.dataProducao.isBefore(fimSemana.add(const Duration(days: 1))))
         .toList();
+
+    // Estimar número total de linhas (produções + matérias-primas)
+    int totalLinhas = producoesDaSemana.length;
+    for (final producao in producoesDaSemana) {
+      totalLinhas += producao.materiaPrimaConsumida.length;
+    }
+
+    // Limitar número de linhas para evitar excesso de páginas
+    if (totalLinhas > 1000) {
+      throw Exception(
+          'Semana selecionada contém muitas entradas ($totalLinhas linhas, incluindo ${producoesDaSemana.length} produções). Por favor, selecione uma semana com menos produções ou contate o suporte.');
+    }
 
     final List<pw.Widget> productionBlocks = [];
 
@@ -557,66 +676,81 @@ class RelatoriosViewModel extends ChangeNotifier {
           ),
           children: [
             pw.Container(
-              padding: const pw.EdgeInsets.all(8),
+              padding: const pw.EdgeInsets.all(6),
               alignment: pw.Alignment.center,
               child: pw.Text(
                 formula?.nome ?? 'Desconhecida',
                 style: pw.TextStyle(
                   fontWeight: pw.FontWeight.bold,
                   font: robotoFontBold,
+                  fontSize: 10,
                 ),
               ),
             ),
             pw.Container(
-              padding: const pw.EdgeInsets.all(8),
+              padding: const pw.EdgeInsets.all(6),
               alignment: pw.Alignment.center,
               child: pw.Text(
                 producao.loteProducao,
-                style: pw.TextStyle(font: robotoFontBold),
+                style: pw.TextStyle(
+                  font: robotoFontBold,
+                  fontSize: 10,
+                ),
               ),
             ),
             pw.Container(
-              padding: const pw.EdgeInsets.all(8),
+              padding: const pw.EdgeInsets.all(6),
               alignment: pw.Alignment.centerRight,
               child: pw.Text(
                 '${producao.quantidadeProduzida.toStringAsFixed(2)} btd',
-                style: pw.TextStyle(font: robotoFontBold),
+                style: pw.TextStyle(
+                  font: robotoFontBold,
+                  fontSize: 10,
+                ),
               ),
             ),
           ],
         ),
       );
 
-      // Linhas dos componentes
-      if (formula != null && formula.componentes.isNotEmpty) {
-        for (final componente in formula.componentes) {
-          final materiaPrima = getMateriaPrimaPorId(componente.materiaPrimaId);
+      // Linhas das matérias-primas consumidas
+      if (producao.materiaPrimaConsumida.isNotEmpty) {
+        for (final entry in producao.materiaPrimaConsumida.entries) {
+          final materiaPrima = getMateriaPrimaPorId(entry.key);
           rows.add(
             pw.TableRow(
               children: [
                 pw.Container(
-                  padding: const pw.EdgeInsets.all(8),
+                  padding: const pw.EdgeInsets.all(6),
                   alignment: pw.Alignment.centerLeft,
                   child: pw.Text(
                     '  ${materiaPrima?.nome ?? 'Desconhecida'}',
-                    style: pw.TextStyle(font: robotoFont),
+                    style: pw.TextStyle(
+                      font: robotoFont,
+                      fontSize: 9,
+                    ),
                   ),
                 ),
                 pw.Container(
-                  padding: const pw.EdgeInsets.all(8),
+                  padding: const pw.EdgeInsets.all(6),
                   alignment: pw.Alignment.center,
                   child: pw.Text(
-                    getNumeroLoteParaMateriaPrima(
-                        componente.materiaPrimaId, producao),
-                    style: pw.TextStyle(font: robotoFont),
+                    getNumeroLoteParaMateriaPrima(entry.key, producao),
+                    style: pw.TextStyle(
+                      font: robotoFont,
+                      fontSize: 9,
+                    ),
                   ),
                 ),
                 pw.Container(
-                  padding: const pw.EdgeInsets.all(8),
+                  padding: const pw.EdgeInsets.all(6),
                   alignment: pw.Alignment.centerRight,
                   child: pw.Text(
-                    '${componente.quantidade.toStringAsFixed(2)} ${componente.unidadeMedida}',
-                    style: pw.TextStyle(font: robotoFont),
+                    '${entry.value.toStringAsFixed(2)} ${materiaPrima?.unidadeMedida ?? ''}',
+                    style: pw.TextStyle(
+                      font: robotoFont,
+                      fontSize: 9,
+                    ),
                   ),
                 ),
               ],
@@ -625,7 +759,7 @@ class RelatoriosViewModel extends ChangeNotifier {
         }
       }
 
-      // Adiciona a tabela da produção como um bloco indivisível
+      // Adiciona a tabela da produção
       productionBlocks.add(
         pw.Column(
           crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -642,344 +776,404 @@ class RelatoriosViewModel extends ChangeNotifier {
                 2: pw.FlexColumnWidth(2),
               },
             ),
-            pw.SizedBox(height: 10), // Espaço entre blocos de produção
+            pw.SizedBox(height: 5),
           ],
         ),
       );
     }
 
-    pdfDoc.addPage(
-      pw.MultiPage(
-        pageTheme: pw.PageTheme(
-          margin: pw.EdgeInsets.all(32),
-          theme: pw.ThemeData.withFont(base: robotoFont),
-        ),
-        header: (pw.Context context) => pw.Column(
-          crossAxisAlignment: pw.CrossAxisAlignment.start,
-          children: [
-            pw.Row(
-              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                pw.Text(
-                  'Controle de Produção Semanal-Mistura/Ensaque',
-                  style: pw.TextStyle(
-                    fontSize: 18,
-                    fontWeight: pw.FontWeight.bold,
-                    font: robotoFont,
+    try {
+      pdfDoc.addPage(
+        pw.MultiPage(
+          maxPages: 100,
+          pageTheme: pw.PageTheme(
+            margin: pw.EdgeInsets.all(20),
+            theme: pw.ThemeData.withFont(
+              base: robotoFont,
+              bold: robotoFontBold,
+            ),
+          ),
+          header: (pw.Context context) => pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Text(
+                    'Controle de Produção Semanal-Mistura/Ensaque',
+                    style: pw.TextStyle(
+                      fontSize: 16,
+                      fontWeight: pw.FontWeight.bold,
+                      font: robotoFont,
+                    ),
                   ),
-                ),
-                pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  children: [
-                    pw.Container(
-                      alignment: pw.Alignment.centerLeft,
-                      child: pw.RichText(
-                        text: pw.TextSpan(
-                          text: 'N° Documento: ',
-                          style: pw.TextStyle(
-                            fontSize: 12,
-                            font: robotoFont,
-                          ),
-                          children: [
-                            pw.TextSpan(
-                              text: 'BPF 18',
-                              style: pw.TextStyle(
-                                fontSize: 12,
-                                font: robotoFontBold,
-                              ),
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Container(
+                        alignment: pw.Alignment.centerLeft,
+                        child: pw.RichText(
+                          text: pw.TextSpan(
+                            text: 'N° Documento: ',
+                            style: pw.TextStyle(
+                              fontSize: 12,
+                              font: robotoFont,
                             ),
-                          ],
+                            children: [
+                              pw.TextSpan(
+                                text: 'BPF 18',
+                                style: pw.TextStyle(
+                                  fontSize: 12,
+                                  font: robotoFontBold,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                    pw.Container(
-                      alignment: pw.Alignment.centerLeft,
-                      child: pw.Text(
-                        'Data: ${DateFormat('dd/MM/yyyy').format(data)}',
+                      pw.Text(
+                        'Data: 25/04/2025',
                         style: pw.TextStyle(
                           fontSize: 12,
                           font: robotoFont,
                         ),
                       ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-            pw.SizedBox(height: 16),
-            pw.Container(
-              padding: const pw.EdgeInsets.only(bottom: 8),
-              decoration: const pw.BoxDecoration(
-                border:
-                    pw.Border(bottom: pw.BorderSide(color: PdfColors.grey300)),
-              ),
-              child: pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                children: [
-                  pw.Text(
-                    'Página ${context.pageNumber} de ${context.pagesCount}',
-                    style: pw.TextStyle(fontSize: 10, color: PdfColors.grey600),
+                    ],
                   ),
                 ],
               ),
-            ),
-          ],
-        ),
-        footer: (pw.Context context) => pw.Column(
-          children: [
-            pw.SizedBox(height: 16),
-            pw.Table(
-              border: pw.TableBorder.all(
-                color: PdfColors.grey400,
-                width: 0.5,
+              pw.SizedBox(height: 10),
+              pw.Container(
+                padding: const pw.EdgeInsets.only(bottom: 6),
+                decoration: const pw.BoxDecoration(
+                  border: pw.Border(
+                      bottom: pw.BorderSide(color: PdfColors.grey300)),
+                ),
+                child: pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text(
+                      'Página ${context.pageNumber} de ${context.pagesCount}',
+                      style: pw.TextStyle(
+                        fontSize: 8,
+                        color: PdfColors.grey600,
+                        font: robotoFont,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              children: [
-                pw.TableRow(
-                  decoration: const pw.BoxDecoration(
-                    color: PdfColors.amber100,
-                  ),
-                  children: [
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.center,
-                      child: pw.Text(
-                        'Execução',
-                        style: pw.TextStyle(
-                          fontSize: 12,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColors.black,
-                        ),
-                      ),
-                    ),
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.center,
-                      child: pw.Text(
-                        'Monitoramento',
-                        style: pw.TextStyle(
-                          fontSize: 12,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColors.black,
-                        ),
-                      ),
-                    ),
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.center,
-                      child: pw.Text(
-                        'Verificação',
-                        style: pw.TextStyle(
-                          fontSize: 12,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColors.black,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                pw.TableRow(
-                  children: [
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.centerLeft,
-                      child: pw.Text(
-                        'Responsável: Helves P. Santos',
-                        style: pw.TextStyle(fontSize: 10, font: robotoFont),
-                      ),
-                    ),
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.centerLeft,
-                      child: pw.Text(
-                        'Responsável: Pedro Luiz ferreira',
-                        style: pw.TextStyle(fontSize: 10, font: robotoFont),
-                      ),
-                    ),
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.centerLeft,
-                      child: pw.Text(
-                        'Responsável: Franciele A. Santos',
-                        style: pw.TextStyle(fontSize: 10, font: robotoFont),
-                      ),
-                    ),
-                  ],
-                ),
-                pw.TableRow(
-                  children: [
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.centerLeft,
-                      child: pw.Text(
-                        'Data:',
-                        style: pw.TextStyle(fontSize: 10, font: robotoFont),
-                      ),
-                    ),
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.centerLeft,
-                      child: pw.Text(
-                        'Data:',
-                        style: pw.TextStyle(fontSize: 10, font: robotoFont),
-                      ),
-                    ),
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.centerLeft,
-                      child: pw.Text(
-                        'Data:',
-                        style: pw.TextStyle(fontSize: 10, font: robotoFont),
-                      ),
-                    ),
-                  ],
-                ),
-                pw.TableRow(
-                  children: [
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.centerLeft,
-                      child: pw.Text(
-                        'Assinatura:',
-                        style: pw.TextStyle(fontSize: 10, font: robotoFont),
-                      ),
-                    ),
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.centerLeft,
-                      child: pw.Text(
-                        'Assinatura:',
-                        style: pw.TextStyle(fontSize: 10, font: robotoFont),
-                      ),
-                    ),
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.centerLeft,
-                      child: pw.Text(
-                        'Assinatura:',
-                        style: pw.TextStyle(fontSize: 10, font: robotoFont),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-              columnWidths: {
-                0: pw.FlexColumnWidth(1),
-                1: pw.FlexColumnWidth(1),
-                2: pw.FlexColumnWidth(1),
-              },
-            ),
-          ],
-        ),
-        build: (pw.Context context) => [
-          pw.Container(
-            padding: const pw.EdgeInsets.all(16),
-            decoration: pw.BoxDecoration(
-              color: PdfColors.grey100,
-              borderRadius: pw.BorderRadius.circular(8),
-            ),
-            child: pw.Text(
-              'Período: ${DateFormat('dd/MM/yyyy').format(inicioSemana)} a ${DateFormat('dd/MM/yyyy').format(fimSemana)}',
-              style: pw.TextStyle(
-                fontSize: 10,
-                fontWeight: pw.FontWeight.bold,
-                color: PdfColors.black,
-              ),
-            ),
+            ],
           ),
-          pw.SizedBox(height: 20),
-          if (productionBlocks.isEmpty)
+          footer: (pw.Context context) => pw.Column(
+            children: [
+              pw.SizedBox(height: 10),
+              pw.Table(
+                border: pw.TableBorder.all(
+                  color: PdfColors.grey400,
+                  width: 0.5,
+                ),
+                children: [
+                  pw.TableRow(
+                    decoration: const pw.BoxDecoration(
+                      color: PdfColors.amber100,
+                    ),
+                    children: [
+                      pw.Container(
+                        padding: const pw.EdgeInsets.all(6),
+                        alignment: pw.Alignment.center,
+                        child: pw.Text(
+                          'Execução',
+                          style: pw.TextStyle(
+                            fontSize: 10,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.black,
+                            font: robotoFontBold,
+                          ),
+                        ),
+                      ),
+                      pw.Container(
+                        padding: const pw.EdgeInsets.all(6),
+                        alignment: pw.Alignment.center,
+                        child: pw.Text(
+                          'Monitoramento',
+                          style: pw.TextStyle(
+                            fontSize: 10,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.black,
+                            font: robotoFontBold,
+                          ),
+                        ),
+                      ),
+                      pw.Container(
+                        padding: const pw.EdgeInsets.all(6),
+                        alignment: pw.Alignment.center,
+                        child: pw.Text(
+                          'Verificação',
+                          style: pw.TextStyle(
+                            fontSize: 10,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.black,
+                            font: robotoFontBold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  pw.TableRow(
+                    children: [
+                      pw.Container(
+                        padding: const pw.EdgeInsets.all(6),
+                        alignment: pw.Alignment.centerLeft,
+                        child: pw.Text(
+                          'Responsável: Helves P. Santos',
+                          style: pw.TextStyle(
+                            fontSize: 8,
+                            font: robotoFont,
+                          ),
+                        ),
+                      ),
+                      pw.Container(
+                        padding: const pw.EdgeInsets.all(6),
+                        alignment: pw.Alignment.centerLeft,
+                        child: pw.Text(
+                          'Responsável: Pedro Luiz ferreira',
+                          style: pw.TextStyle(
+                            fontSize: 8,
+                            font: robotoFont,
+                          ),
+                        ),
+                      ),
+                      pw.Container(
+                        padding: const pw.EdgeInsets.all(6),
+                        alignment: pw.Alignment.centerLeft,
+                        child: pw.Text(
+                          'Responsável: Franciele A. Santos',
+                          style: pw.TextStyle(
+                            fontSize: 8,
+                            font: robotoFont,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  pw.TableRow(
+                    children: [
+                      pw.Container(
+                        padding: const pw.EdgeInsets.all(6),
+                        alignment: pw.Alignment.centerLeft,
+                        child: pw.Text(
+                          'Data:',
+                          style: pw.TextStyle(
+                            fontSize: 8,
+                            font: robotoFont,
+                          ),
+                        ),
+                      ),
+                      pw.Container(
+                        padding: const pw.EdgeInsets.all(6),
+                        alignment: pw.Alignment.centerLeft,
+                        child: pw.Text(
+                          'Data:',
+                          style: pw.TextStyle(
+                            fontSize: 8,
+                            font: robotoFont,
+                          ),
+                        ),
+                      ),
+                      pw.Container(
+                        padding: const pw.EdgeInsets.all(6),
+                        alignment: pw.Alignment.centerLeft,
+                        child: pw.Text(
+                          'Data:',
+                          style: pw.TextStyle(
+                            fontSize: 8,
+                            font: robotoFont,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  pw.TableRow(
+                    children: [
+                      pw.Container(
+                        padding: const pw.EdgeInsets.all(6),
+                        alignment: pw.Alignment.centerLeft,
+                        child: pw.Text(
+                          'Assinatura:',
+                          style: pw.TextStyle(
+                            fontSize: 8,
+                            font: robotoFont,
+                          ),
+                        ),
+                      ),
+                      pw.Container(
+                        padding: const pw.EdgeInsets.all(6),
+                        alignment: pw.Alignment.centerLeft,
+                        child: pw.Text(
+                          'Assinatura:',
+                          style: pw.TextStyle(
+                            fontSize: 8,
+                            font: robotoFont,
+                          ),
+                        ),
+                      ),
+                      pw.Container(
+                        padding: const pw.EdgeInsets.all(6),
+                        alignment: pw.Alignment.centerLeft,
+                        child: pw.Text(
+                          'Assinatura:',
+                          style: pw.TextStyle(
+                            fontSize: 8,
+                            font: robotoFont,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                columnWidths: {
+                  0: pw.FlexColumnWidth(1),
+                  1: pw.FlexColumnWidth(1),
+                  2: pw.FlexColumnWidth(1),
+                },
+              ),
+            ],
+          ),
+          build: (pw.Context context) => [
             pw.Container(
-              padding: const pw.EdgeInsets.all(16),
+              padding: const pw.EdgeInsets.all(12),
               decoration: pw.BoxDecoration(
-                color: PdfColors.red100,
-                borderRadius: pw.BorderRadius.circular(8),
+                color: PdfColors.grey100,
+                borderRadius: pw.BorderRadius.circular(6),
               ),
               child: pw.Text(
-                'Nenhuma produção registrada nesta semana.',
+                'Período: ${DateFormat('dd/MM/yyyy').format(inicioSemana)} a ${DateFormat('dd/MM/yyyy').format(fimSemana)}',
                 style: pw.TextStyle(
-                  fontSize: 14,
-                  color: PdfColors.red800,
+                  fontSize: 10,
+                  fontWeight: pw.FontWeight.bold,
+                  color: PdfColors.black,
+                  font: robotoFont,
                 ),
               ),
-            )
-          else
-            pw.Column(
-              children: [
-                // Cabeçalho da tabela
-                pw.Table(
-                  border: pw.TableBorder.all(
-                    color: PdfColors.grey400,
-                    width: 0.5,
-                  ),
-                  children: [
-                    pw.TableRow(
-                      decoration: const pw.BoxDecoration(
-                        color: PdfColors.amber100,
-                      ),
-                      children: [
-                        pw.Container(
-                          padding: const pw.EdgeInsets.all(8),
-                          alignment: pw.Alignment.center,
-                          child: pw.Text(
-                            'Fórmula / Matéria-Prima',
-                            style: pw.TextStyle(
-                              fontSize: 12,
-                              fontWeight: pw.FontWeight.bold,
-                              color: PdfColors.black,
-                            ),
-                          ),
-                        ),
-                        pw.Container(
-                          padding: const pw.EdgeInsets.all(8),
-                          alignment: pw.Alignment.center,
-                          child: pw.Text(
-                            'Lote',
-                            style: pw.TextStyle(
-                              fontSize: 12,
-                              fontWeight: pw.FontWeight.bold,
-                              color: PdfColors.black,
-                            ),
-                          ),
-                        ),
-                        pw.Container(
-                          padding: const pw.EdgeInsets.all(8),
-                          alignment: pw.Alignment.center,
-                          child: pw.Text(
-                            'Quantidade',
-                            style: pw.TextStyle(
-                              fontSize: 12,
-                              fontWeight: pw.FontWeight.bold,
-                              color: PdfColors.black,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                  columnWidths: {
-                    0: pw.FlexColumnWidth(3),
-                    1: pw.FlexColumnWidth(2),
-                    2: pw.FlexColumnWidth(2),
-                  },
-                ),
-                // Blocos de produção
-                ...productionBlocks,
-              ],
             ),
-        ],
-      ),
-    );
+            pw.SizedBox(height: 15),
+            if (productionBlocks.isEmpty)
+              pw.Container(
+                padding: const pw.EdgeInsets.all(12),
+                decoration: pw.BoxDecoration(
+                  color: PdfColors.red100,
+                  borderRadius: pw.BorderRadius.circular(6),
+                ),
+                child: pw.Text(
+                  'Nenhuma produção registrada nesta semana.',
+                  style: pw.TextStyle(
+                    fontSize: 12,
+                    color: PdfColors.red800,
+                    font: robotoFont,
+                  ),
+                ),
+              )
+            else
+              pw.Column(
+                children: [
+                  pw.Table(
+                    border: pw.TableBorder.all(
+                      color: PdfColors.grey400,
+                      width: 0.5,
+                    ),
+                    children: [
+                      pw.TableRow(
+                        decoration: const pw.BoxDecoration(
+                          color: PdfColors.amber100,
+                        ),
+                        children: [
+                          pw.Container(
+                            padding: const pw.EdgeInsets.all(6),
+                            alignment: pw.Alignment.center,
+                            child: pw.Text(
+                              'Fórmula / Matéria-Prima',
+                              style: pw.TextStyle(
+                                fontSize: 10,
+                                fontWeight: pw.FontWeight.bold,
+                                color: PdfColors.black,
+                                font: robotoFontBold,
+                              ),
+                            ),
+                          ),
+                          pw.Container(
+                            padding: const pw.EdgeInsets.all(6),
+                            alignment: pw.Alignment.center,
+                            child: pw.Text(
+                              'Lote',
+                              style: pw.TextStyle(
+                                fontSize: 10,
+                                fontWeight: pw.FontWeight.bold,
+                                color: PdfColors.black,
+                                font: robotoFontBold,
+                              ),
+                            ),
+                          ),
+                          pw.Container(
+                            padding: const pw.EdgeInsets.all(6),
+                            alignment: pw.Alignment.center,
+                            child: pw.Text(
+                              'Quantidade',
+                              style: pw.TextStyle(
+                                fontSize: 10,
+                                fontWeight: pw.FontWeight.bold,
+                                color: PdfColors.black,
+                                font: robotoFontBold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    columnWidths: {
+                      0: pw.FlexColumnWidth(3),
+                      1: pw.FlexColumnWidth(2),
+                      2: pw.FlexColumnWidth(2),
+                    },
+                  ),
+                  ...productionBlocks,
+                ],
+              ),
+          ],
+        ),
+      );
+    } catch (e) {
+      throw Exception(
+          'Erro ao gerar relatório: Não foi possível gerar o PDF devido ao grande volume de dados ($totalLinhas linhas). Tente uma semana com menos produções ou contate o suporte. Detalhes: $e');
+    }
 
     return await pdfDoc.save();
   }
 
   Future<Uint8List> gerarRelatorioPersonalizadoPDF(
       DateTime dataInicio, DateTime dataFim) async {
-    final pdfDoc = pw.Document();
-    final fonts = await _loadRobotoFonts(); // Carrega o mapa de fontes
-    final robotoFont = fonts['regular']!; // Fonte regular
-    final robotoFontBold = fonts['bold']!; // Fonte bold
+    final pdfDoc = pw.Document(
+      theme: pw.ThemeData.withFont(
+        base: pw.Font
+            .helvetica(), // Fallback inicial para evitar Helvetica sem Unicode
+        bold: pw.Font.helveticaBold(),
+      ),
+    );
+
+    // Carregar fontes com validação
+    Map<String, pw.Font> fonts;
+    try {
+      fonts = await _loadRobotoFonts();
+    } catch (e) {
+      print('Erro ao carregar fontes Roboto: $e');
+      fonts = {
+        'regular': pw.Font.helvetica(),
+        'bold': pw.Font.helveticaBold(),
+      };
+    }
+    final robotoFont = fonts['regular']!;
+    final robotoFontBold = fonts['bold']!;
 
     final producoesPeriodo = _producoes
         .where((p) =>
@@ -987,6 +1181,12 @@ class RelatoriosViewModel extends ChangeNotifier {
                 dataInicio.subtract(const Duration(microseconds: 1))) &&
             p.dataProducao.isBefore(dataFim.add(const Duration(days: 1))))
         .toList();
+
+    // Limitar o número de produções para evitar excesso de páginas
+    if (producoesPeriodo.length > 100) {
+      throw Exception(
+          'Período selecionado contém muitas produções (${producoesPeriodo.length}). Por favor, reduza o intervalo de datas.');
+    }
 
     final List<pw.Widget> productionBlocks = [];
 
@@ -1002,66 +1202,82 @@ class RelatoriosViewModel extends ChangeNotifier {
           ),
           children: [
             pw.Container(
-              padding: const pw.EdgeInsets.all(8),
+              padding:
+                  const pw.EdgeInsets.all(6), // Reduzido de 8 para compactar
               alignment: pw.Alignment.center,
               child: pw.Text(
                 formula?.nome ?? 'Desconhecida',
                 style: pw.TextStyle(
                   fontWeight: pw.FontWeight.bold,
                   font: robotoFontBold,
+                  fontSize: 10, // Reduzido para compactar
                 ),
               ),
             ),
             pw.Container(
-              padding: const pw.EdgeInsets.all(8),
+              padding: const pw.EdgeInsets.all(6),
               alignment: pw.Alignment.center,
               child: pw.Text(
                 producao.loteProducao,
-                style: pw.TextStyle(font: robotoFontBold),
+                style: pw.TextStyle(
+                  font: robotoFontBold,
+                  fontSize: 10,
+                ),
               ),
             ),
             pw.Container(
-              padding: const pw.EdgeInsets.all(8),
+              padding: const pw.EdgeInsets.all(6),
               alignment: pw.Alignment.centerRight,
               child: pw.Text(
                 '${producao.quantidadeProduzida.toStringAsFixed(2)} btd',
-                style: pw.TextStyle(font: robotoFontBold),
+                style: pw.TextStyle(
+                  font: robotoFontBold,
+                  fontSize: 10,
+                ),
               ),
             ),
           ],
         ),
       );
 
-      // Linhas dos componentes
-      if (formula != null && formula.componentes.isNotEmpty) {
-        for (final componente in formula.componentes) {
-          final materiaPrima = getMateriaPrimaPorId(componente.materiaPrimaId);
+      // Linhas das matérias-primas consumidas
+      if (producao.materiaPrimaConsumida.isNotEmpty) {
+        for (final entry in producao.materiaPrimaConsumida.entries) {
+          final materiaPrima = getMateriaPrimaPorId(entry.key);
           rows.add(
             pw.TableRow(
               children: [
                 pw.Container(
-                  padding: const pw.EdgeInsets.all(8),
+                  padding: const pw.EdgeInsets.all(6),
                   alignment: pw.Alignment.centerLeft,
                   child: pw.Text(
                     '  ${materiaPrima?.nome ?? 'Desconhecida'}',
-                    style: pw.TextStyle(font: robotoFont),
+                    style: pw.TextStyle(
+                      font: robotoFont,
+                      fontSize: 9, // Reduzido para compactar
+                    ),
                   ),
                 ),
                 pw.Container(
-                  padding: const pw.EdgeInsets.all(8),
+                  padding: const pw.EdgeInsets.all(6),
                   alignment: pw.Alignment.center,
                   child: pw.Text(
-                    getNumeroLoteParaMateriaPrima(
-                        componente.materiaPrimaId, producao),
-                    style: pw.TextStyle(font: robotoFont),
+                    getNumeroLoteParaMateriaPrima(entry.key, producao),
+                    style: pw.TextStyle(
+                      font: robotoFont,
+                      fontSize: 9,
+                    ),
                   ),
                 ),
                 pw.Container(
-                  padding: const pw.EdgeInsets.all(8),
+                  padding: const pw.EdgeInsets.all(6),
                   alignment: pw.Alignment.centerRight,
                   child: pw.Text(
-                    '${componente.quantidade.toStringAsFixed(2)} ${componente.unidadeMedida}',
-                    style: pw.TextStyle(font: robotoFont),
+                    '${entry.value.toStringAsFixed(2)} ${materiaPrima?.unidadeMedida ?? ''}',
+                    style: pw.TextStyle(
+                      font: robotoFont,
+                      fontSize: 9,
+                    ),
                   ),
                 ),
               ],
@@ -1070,7 +1286,7 @@ class RelatoriosViewModel extends ChangeNotifier {
         }
       }
 
-      // Adiciona a tabela da produção como um bloco indivisível
+      // Adiciona a tabela da produção
       productionBlocks.add(
         pw.Column(
           crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -1087,331 +1303,376 @@ class RelatoriosViewModel extends ChangeNotifier {
                 2: pw.FlexColumnWidth(2),
               },
             ),
-            pw.SizedBox(height: 10), // Espaço entre blocos de produção
+            pw.SizedBox(height: 5), // Reduzido de 10 para compactar
           ],
         ),
       );
     }
 
-    pdfDoc.addPage(
-      pw.MultiPage(
-        pageTheme: pw.PageTheme(
-          margin: pw.EdgeInsets.all(32),
-          theme: pw.ThemeData.withFont(base: robotoFont),
-        ),
-        header: (pw.Context context) => pw.Column(
-          crossAxisAlignment: pw.CrossAxisAlignment.start,
-          children: [
-            pw.Row(
-              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                pw.Text(
-                  'Controle de Produção Personalizado-Mistura/Ensaque',
-                  style: pw.TextStyle(
-                    fontSize: 18,
-                    fontWeight: pw.FontWeight.bold,
-                    font: robotoFont,
+    try {
+      pdfDoc.addPage(
+        pw.MultiPage(
+          pageTheme: pw.PageTheme(
+            margin: pw.EdgeInsets.all(20), // Reduzido de 32 para compactar
+            theme: pw.ThemeData.withFont(
+              base: robotoFont,
+              bold: robotoFontBold,
+            ),
+          ),
+          header: (pw.Context context) => pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Text(
+                    'Controle de Produção Personalizado-Mistura/Ensaque',
+                    style: pw.TextStyle(
+                      fontSize: 16,
+                      fontWeight: pw.FontWeight.bold,
+                      font: robotoFont,
+                    ),
                   ),
-                ),
-                pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  children: [
-                    pw.Container(
-                      alignment: pw.Alignment.centerLeft,
-                      child: pw.RichText(
-                        text: pw.TextSpan(
-                          text: 'N° Documento: ',
-                          style: pw.TextStyle(
-                            fontSize: 12,
-                            font: robotoFont,
-                          ),
-                          children: [
-                            pw.TextSpan(
-                              text: 'BPF 18',
-                              style: pw.TextStyle(
-                                fontSize: 12,
-                                font: robotoFontBold,
-                              ),
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Container(
+                        alignment: pw.Alignment.centerLeft,
+                        child: pw.RichText(
+                          text: pw.TextSpan(
+                            text: 'N° Documento: ',
+                            style: pw.TextStyle(
+                              fontSize: 12,
+                              font: robotoFont,
                             ),
-                          ],
+                            children: [
+                              pw.TextSpan(
+                                text: 'BPF 18',
+                                style: pw.TextStyle(
+                                  fontSize: 12,
+                                  font: robotoFontBold,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
+                      pw.Text(
+                        'Data: 25/04/2025',
+                        style: pw.TextStyle(
+                          fontSize: 12,
+                          font: robotoFont,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              pw.SizedBox(height: 10), // Reduzido de 16 para compactar
+              pw.Container(
+                padding: const pw.EdgeInsets.only(bottom: 6),
+                decoration: const pw.BoxDecoration(
+                  border: pw.Border(
+                      bottom: pw.BorderSide(color: PdfColors.grey300)),
+                ),
+                child: pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
                     pw.Text(
-                      'Data: ${DateFormat('dd/MM/yyyy').format(DateTime.now())}',
+                      'Página ${context.pageNumber} de ${context.pagesCount}',
                       style: pw.TextStyle(
-                        fontSize: 12,
+                        fontSize: 8, // Reduzido para compactar
+                        color: PdfColors.grey600,
                         font: robotoFont,
                       ),
                     ),
                   ],
                 ),
-              ],
-            ),
-            pw.SizedBox(height: 16),
-            pw.Container(
-              padding: const pw.EdgeInsets.only(bottom: 8),
-              decoration: const pw.BoxDecoration(
-                border:
-                    pw.Border(bottom: pw.BorderSide(color: PdfColors.grey300)),
               ),
-              child: pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            ],
+          ),
+          footer: (pw.Context context) => pw.Column(
+            children: [
+              pw.SizedBox(height: 10), // Reduzido de 16
+              pw.Table(
+                border: pw.TableBorder.all(
+                  color: PdfColors.grey400,
+                  width: 0.5,
+                ),
                 children: [
-                  pw.Text(
-                    'Página ${context.pageNumber} de ${context.pagesCount}',
-                    style: pw.TextStyle(fontSize: 10, color: PdfColors.grey600),
+                  pw.TableRow(
+                    decoration: const pw.BoxDecoration(
+                      color: PdfColors.amber100,
+                    ),
+                    children: [
+                      pw.Container(
+                        padding: const pw.EdgeInsets.all(6),
+                        alignment: pw.Alignment.center,
+                        child: pw.Text(
+                          'Execução',
+                          style: pw.TextStyle(
+                            fontSize: 10,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.black,
+                            font: robotoFontBold,
+                          ),
+                        ),
+                      ),
+                      pw.Container(
+                        padding: const pw.EdgeInsets.all(6),
+                        alignment: pw.Alignment.center,
+                        child: pw.Text(
+                          'Monitoramento',
+                          style: pw.TextStyle(
+                            fontSize: 10,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.black,
+                            font: robotoFontBold,
+                          ),
+                        ),
+                      ),
+                      pw.Container(
+                        padding: const pw.EdgeInsets.all(6),
+                        alignment: pw.Alignment.center,
+                        child: pw.Text(
+                          'Verificação',
+                          style: pw.TextStyle(
+                            fontSize: 10,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.black,
+                            font: robotoFontBold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  pw.TableRow(
+                    children: [
+                      pw.Container(
+                        padding: const pw.EdgeInsets.all(6),
+                        alignment: pw.Alignment.centerLeft,
+                        child: pw.Text(
+                          'Responsável: Helves P. Santos',
+                          style: pw.TextStyle(
+                            fontSize: 8,
+                            font: robotoFont,
+                          ),
+                        ),
+                      ),
+                      pw.Container(
+                        padding: const pw.EdgeInsets.all(6),
+                        alignment: pw.Alignment.centerLeft,
+                        child: pw.Text(
+                          'Responsável: Pedro Luiz ferreira',
+                          style: pw.TextStyle(
+                            fontSize: 8,
+                            font: robotoFont,
+                          ),
+                        ),
+                      ),
+                      pw.Container(
+                        padding: const pw.EdgeInsets.all(6),
+                        alignment: pw.Alignment.centerLeft,
+                        child: pw.Text(
+                          'Responsável: Franciele A. Santos',
+                          style: pw.TextStyle(
+                            fontSize: 8,
+                            font: robotoFont,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  pw.TableRow(
+                    children: [
+                      pw.Container(
+                        padding: const pw.EdgeInsets.all(6),
+                        alignment: pw.Alignment.centerLeft,
+                        child: pw.Text(
+                          'Data:',
+                          style: pw.TextStyle(
+                            fontSize: 8,
+                            font: robotoFont,
+                          ),
+                        ),
+                      ),
+                      pw.Container(
+                        padding: const pw.EdgeInsets.all(6),
+                        alignment: pw.Alignment.centerLeft,
+                        child: pw.Text(
+                          'Data:',
+                          style: pw.TextStyle(
+                            fontSize: 8,
+                            font: robotoFont,
+                          ),
+                        ),
+                      ),
+                      pw.Container(
+                        padding: const pw.EdgeInsets.all(6),
+                        alignment: pw.Alignment.centerLeft,
+                        child: pw.Text(
+                          'Data:',
+                          style: pw.TextStyle(
+                            fontSize: 8,
+                            font: robotoFont,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  pw.TableRow(
+                    children: [
+                      pw.Container(
+                        padding: const pw.EdgeInsets.all(6),
+                        alignment: pw.Alignment.centerLeft,
+                        child: pw.Text(
+                          'Assinatura:',
+                          style: pw.TextStyle(
+                            fontSize: 8,
+                            font: robotoFont,
+                          ),
+                        ),
+                      ),
+                      pw.Container(
+                        padding: const pw.EdgeInsets.all(6),
+                        alignment: pw.Alignment.centerLeft,
+                        child: pw.Text(
+                          'Assinatura:',
+                          style: pw.TextStyle(
+                            fontSize: 8,
+                            font: robotoFont,
+                          ),
+                        ),
+                      ),
+                      pw.Container(
+                        padding: const pw.EdgeInsets.all(6),
+                        alignment: pw.Alignment.centerLeft,
+                        child: pw.Text(
+                          'Assinatura:',
+                          style: pw.TextStyle(
+                            fontSize: 8,
+                            font: robotoFont,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
+                columnWidths: {
+                  0: pw.FlexColumnWidth(1),
+                  1: pw.FlexColumnWidth(1),
+                  2: pw.FlexColumnWidth(1),
+                },
               ),
-            ),
-          ],
-        ),
-        footer: (pw.Context context) => pw.Column(
-          children: [
-            pw.SizedBox(height: 16),
-            pw.Table(
-              border: pw.TableBorder.all(
-                color: PdfColors.grey400,
-                width: 0.5,
-              ),
-              children: [
-                pw.TableRow(
-                  decoration: const pw.BoxDecoration(
-                    color: PdfColors.amber100,
-                  ),
-                  children: [
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.center,
-                      child: pw.Text(
-                        'Execução',
-                        style: pw.TextStyle(
-                          fontSize: 12,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColors.black,
-                        ),
-                      ),
-                    ),
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.center,
-                      child: pw.Text(
-                        'Monitoramento',
-                        style: pw.TextStyle(
-                          fontSize: 12,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColors.black,
-                        ),
-                      ),
-                    ),
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.center,
-                      child: pw.Text(
-                        'Verificação',
-                        style: pw.TextStyle(
-                          fontSize: 12,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColors.black,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                pw.TableRow(
-                  children: [
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.centerLeft,
-                      child: pw.Text(
-                        'Responsável: Helves P. Santos',
-                        style: pw.TextStyle(fontSize: 10, font: robotoFont),
-                      ),
-                    ),
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.centerLeft,
-                      child: pw.Text(
-                        'Responsável: Pedro Luiz ferreira',
-                        style: pw.TextStyle(fontSize: 10, font: robotoFont),
-                      ),
-                    ),
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.centerLeft,
-                      child: pw.Text(
-                        'Responsável: Franciele A. Santos',
-                        style: pw.TextStyle(fontSize: 10, font: robotoFont),
-                      ),
-                    ),
-                  ],
-                ),
-                pw.TableRow(
-                  children: [
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.centerLeft,
-                      child: pw.Text(
-                        'Data:',
-                        style: pw.TextStyle(fontSize: 10, font: robotoFont),
-                      ),
-                    ),
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.centerLeft,
-                      child: pw.Text(
-                        'Data:',
-                        style: pw.TextStyle(fontSize: 10, font: robotoFont),
-                      ),
-                    ),
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.centerLeft,
-                      child: pw.Text(
-                        'Data:',
-                        style: pw.TextStyle(fontSize: 10, font: robotoFont),
-                      ),
-                    ),
-                  ],
-                ),
-                pw.TableRow(
-                  children: [
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.centerLeft,
-                      child: pw.Text(
-                        'Assinatura:',
-                        style: pw.TextStyle(fontSize: 10, font: robotoFont),
-                      ),
-                    ),
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.centerLeft,
-                      child: pw.Text(
-                        'Assinatura:',
-                        style: pw.TextStyle(fontSize: 10, font: robotoFont),
-                      ),
-                    ),
-                    pw.Container(
-                      padding: const pw.EdgeInsets.all(8),
-                      alignment: pw.Alignment.centerLeft,
-                      child: pw.Text(
-                        'Assinatura:',
-                        style: pw.TextStyle(fontSize: 10, font: robotoFont),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-              columnWidths: {
-                0: pw.FlexColumnWidth(1),
-                1: pw.FlexColumnWidth(1),
-                2: pw.FlexColumnWidth(1),
-              },
-            ),
-          ],
-        ),
-        build: (pw.Context context) => [
-          pw.Container(
-            padding: const pw.EdgeInsets.all(16),
-            decoration: pw.BoxDecoration(
-              color: PdfColors.grey100,
-              borderRadius: pw.BorderRadius.circular(8),
-            ),
-            child: pw.Text(
-              'Período: ${DateFormat('dd/MM/yyyy').format(dataInicio)} a ${DateFormat('dd/MM/yyyy').format(dataFim)}',
-              style: pw.TextStyle(
-                fontSize: 10,
-                fontWeight: pw.FontWeight.bold,
-                color: PdfColors.black,
-              ),
-            ),
+            ],
           ),
-          pw.SizedBox(height: 20),
-          if (productionBlocks.isEmpty)
+          build: (pw.Context context) => [
             pw.Container(
-              padding: const pw.EdgeInsets.all(16),
+              padding: const pw.EdgeInsets.all(12), // Reduzido de 16
               decoration: pw.BoxDecoration(
-                color: PdfColors.red100,
-                borderRadius: pw.BorderRadius.circular(8),
+                color: PdfColors.grey100,
+                borderRadius: pw.BorderRadius.circular(6),
               ),
               child: pw.Text(
-                'Nenhuma produção registrada neste período.',
+                'Período: ${DateFormat('dd/MM/yyyy').format(dataInicio)} a ${DateFormat('dd/MM/yyyy').format(dataFim)}',
                 style: pw.TextStyle(
-                  fontSize: 14,
-                  color: PdfColors.red800,
+                  fontSize: 10,
+                  fontWeight: pw.FontWeight.bold,
+                  color: PdfColors.black,
+                  font: robotoFont,
                 ),
               ),
-            )
-          else
-            pw.Column(
-              children: [
-                // Cabeçalho da tabela
-                pw.Table(
-                  border: pw.TableBorder.all(
-                    color: PdfColors.grey400,
-                    width: 0.5,
-                  ),
-                  children: [
-                    pw.TableRow(
-                      decoration: const pw.BoxDecoration(
-                        color: PdfColors.amber100,
-                      ),
-                      children: [
-                        pw.Container(
-                          padding: const pw.EdgeInsets.all(8),
-                          alignment: pw.Alignment.center,
-                          child: pw.Text(
-                            'Fórmula / Matéria-Prima',
-                            style: pw.TextStyle(
-                              fontSize: 12,
-                              fontWeight: pw.FontWeight.bold,
-                              color: PdfColors.black,
-                            ),
-                          ),
-                        ),
-                        pw.Container(
-                          padding: const pw.EdgeInsets.all(8),
-                          alignment: pw.Alignment.center,
-                          child: pw.Text(
-                            'Lote',
-                            style: pw.TextStyle(
-                              fontSize: 12,
-                              fontWeight: pw.FontWeight.bold,
-                              color: PdfColors.black,
-                            ),
-                          ),
-                        ),
-                        pw.Container(
-                          padding: const pw.EdgeInsets.all(8),
-                          alignment: pw.Alignment.center,
-                          child: pw.Text(
-                            'Quantidade',
-                            style: pw.TextStyle(
-                              fontSize: 12,
-                              fontWeight: pw.FontWeight.bold,
-                              color: PdfColors.black,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                  columnWidths: {
-                    0: pw.FlexColumnWidth(3),
-                    1: pw.FlexColumnWidth(2),
-                    2: pw.FlexColumnWidth(2),
-                  },
-                ),
-                // Blocos de produção
-                ...productionBlocks,
-              ],
             ),
-        ],
-      ),
-    );
+            pw.SizedBox(height: 15), // Reduzido de 20
+            if (productionBlocks.isEmpty)
+              pw.Container(
+                padding: const pw.EdgeInsets.all(12),
+                decoration: pw.BoxDecoration(
+                  color: PdfColors.red100,
+                  borderRadius: pw.BorderRadius.circular(6),
+                ),
+                child: pw.Text(
+                  'Nenhuma produção registrada neste período.',
+                  style: pw.TextStyle(
+                    fontSize: 12, // Reduzido de 14
+                    color: PdfColors.red800,
+                    font: robotoFont,
+                  ),
+                ),
+              )
+            else
+              pw.Column(
+                children: [
+                  pw.Table(
+                    border: pw.TableBorder.all(
+                      color: PdfColors.grey400,
+                      width: 0.5,
+                    ),
+                    children: [
+                      pw.TableRow(
+                        decoration: const pw.BoxDecoration(
+                          color: PdfColors.amber100,
+                        ),
+                        children: [
+                          pw.Container(
+                            padding: const pw.EdgeInsets.all(6),
+                            alignment: pw.Alignment.center,
+                            child: pw.Text(
+                              'Fórmula / Matéria-Prima',
+                              style: pw.TextStyle(
+                                fontSize: 10,
+                                fontWeight: pw.FontWeight.bold,
+                                color: PdfColors.black,
+                                font: robotoFontBold,
+                              ),
+                            ),
+                          ),
+                          pw.Container(
+                            padding: const pw.EdgeInsets.all(6),
+                            alignment: pw.Alignment.center,
+                            child: pw.Text(
+                              'Lote',
+                              style: pw.TextStyle(
+                                fontSize: 10,
+                                fontWeight: pw.FontWeight.bold,
+                                color: PdfColors.black,
+                                font: robotoFontBold,
+                              ),
+                            ),
+                          ),
+                          pw.Container(
+                            padding: const pw.EdgeInsets.all(6),
+                            alignment: pw.Alignment.center,
+                            child: pw.Text(
+                              'Quantidade',
+                              style: pw.TextStyle(
+                                fontSize: 10,
+                                fontWeight: pw.FontWeight.bold,
+                                color: PdfColors.black,
+                                font: robotoFontBold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    columnWidths: {
+                      0: pw.FlexColumnWidth(3),
+                      1: pw.FlexColumnWidth(2),
+                      2: pw.FlexColumnWidth(2),
+                    },
+                  ),
+                  ...productionBlocks,
+                ],
+              ),
+          ],
+        ),
+      );
+    } catch (e) {
+      throw Exception(
+          'Erro ao gerar relatório: Número excessivo de páginas. Tente um período menor ou contate o suporte. Detalhes: $e');
+    }
 
     return await pdfDoc.save();
   }
