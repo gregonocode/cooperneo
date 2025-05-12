@@ -66,15 +66,23 @@ class RelatoriosViewModel extends ChangeNotifier {
   // Função ajustada para buscar o numero_lote com base no materia_prima_id
   String getNumeroLoteParaMateriaPrima(
       String materiaPrimaId, Producao producao) {
-    // Busca um lote que corresponda à matéria-prima
-    final lote = _lotes.firstWhereOrNull(
-      (lote) => lote.materiaPrimaId == materiaPrimaId,
-    );
+    final lotesDestaMP =
+        _lotes.where((l) => l.materiaPrimaId == materiaPrimaId);
 
-    // Se encontrar um lote, retorna o numero_lote; caso contrário, usa o loteProducao como fallback
-    return lote?.numeroLote ?? producao.loteProducao;
+    if (lotesDestaMP.isEmpty) {
+      return producao.loteProducao;
+    }
+
+    // Jeito 1: usar reduce para escolher o com data mais nova
+    final ultimo = lotesDestaMP.reduce((prev, element) {
+      return element.dataRecebimento.isAfter(prev.dataRecebimento)
+          ? element
+          : prev;
+    });
+    return ultimo.numeroLote;
   }
 
+  // Função para carregar as fontes Roboto
   Future<Map<String, pw.Font>> _loadRobotoFonts() async {
     final robotoRegular =
         pw.Font.ttf(await rootBundle.load('assets/fonts/Roboto-Regular.ttf'));

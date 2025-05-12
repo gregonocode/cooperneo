@@ -233,11 +233,17 @@ class SupabaseService {
     }
   }
 
-  // Lotes
+  // buscar Lotes mais recentes
   Future<List<Lote>> fetchLotes() async {
     try {
-      final response = await _client.from('lotes').select();
-      return response.map((item) => Lote.fromJson(item)).toList();
+      final response = await _client
+          .from('lotes')
+          .select()
+          // ordena pelo campo data_recebimento do mais novo para o mais antigo
+          .order('data_recebimento', ascending: false);
+      return (response as List)
+          .map((item) => Lote.fromJson(item as Map<String, dynamic>))
+          .toList();
     } catch (e) {
       throw Exception('Erro ao buscar lotes: $e');
     }
