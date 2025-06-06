@@ -13,6 +13,18 @@ import '../models/lote.dart'; // Importação adicionada
 import '../services/supabase_service.dart';
 import 'package:pdf/pdf.dart';
 
+/// Classe para controlar consumo de lotes de forma mutável
+class _LoteConsumicao {
+  final String numeroLote;
+  double quantidadeAtual;
+  final DateTime dataRecebimento;
+
+  _LoteConsumicao(Lote lote)
+      : numeroLote = lote.numeroLote,
+        quantidadeAtual = lote.quantidadeAtual,
+        dataRecebimento = lote.dataRecebimento;
+}
+
 class RelatoriosViewModel extends ChangeNotifier {
   final SupabaseService _supabaseService;
 
@@ -63,23 +75,39 @@ class RelatoriosViewModel extends ChangeNotifier {
     return _materiasPrimas.firstWhereOrNull((mp) => mp.id == id);
   }
 
-  // Função ajustada para buscar o numero_lote com base no materia_prima_id
-  String getNumeroLoteParaMateriaPrima(
-      String materiaPrimaId, Producao producao) {
-    final lotesDestaMP =
-        _lotes.where((l) => l.materiaPrimaId == materiaPrimaId);
+  /// Método que, dado o mapa de lotes por matéria-prima e a quantidade a consumir,
+  /// faz o consumo FIFO (do lote mais antigo para o mais novo) e retorna
+  /// uma string com os números de lote usados, separados por "/".
+  String _consumirLotes(
+    String materiaPrimaId,
+    double quantidadeNecessaria,
+    Map<String, List<_LoteConsumicao>> lotesPorMP,
+  ) {
+    final lotesDaMP = lotesPorMP[materiaPrimaId] ?? [];
+    final usados = <String>[];
+    var restante = quantidadeNecessaria;
 
-    if (lotesDestaMP.isEmpty) {
-      return producao.loteProducao;
+    for (var lote in lotesDaMP) {
+      if (lote.quantidadeAtual <= 0) continue;
+
+      if (lote.quantidadeAtual >= restante) {
+        // Este lote supre toda a quantidade restante
+        lote.quantidadeAtual -= restante;
+        usados.add(lote.numeroLote);
+        restante = 0;
+        break;
+      } else {
+        // Lote não é suficiente: usa todo o restante dele e segue para o próximo lote
+        restante -= lote.quantidadeAtual;
+        usados.add(lote.numeroLote);
+        lote.quantidadeAtual = 0;
+      }
     }
 
-    // Jeito 1: usar reduce para escolher o com data mais nova
-    final ultimo = lotesDestaMP.reduce((prev, element) {
-      return element.dataRecebimento.isAfter(prev.dataRecebimento)
-          ? element
-          : prev;
-    });
-    return ultimo.numeroLote;
+    // Se após consumir todos os lotes disponíveis ainda houver restante,
+    // podemos simplesmente exibir os que já foram usados; em sistemas reais,
+    // talvez queiramos registrar "Falta X" ou algo similar. Aqui, apenas retornamos.
+    return usados.join('/');
   }
 
   // Função para carregar as fontes Roboto
@@ -117,12 +145,28 @@ class RelatoriosViewModel extends ChangeNotifier {
     final robotoFont = fonts['regular']!;
     final robotoFontBold = fonts['bold']!;
 
+    // Filtrar produções do dia especificado
     final producoesDoDia = _producoes
         .where((p) =>
-            p.dataProducao.day == data.day &&
+            p.dataProducao.year == data.year &&
             p.dataProducao.month == data.month &&
-            p.dataProducao.year == data.year)
+            p.dataProducao.day == data.day)
         .toList();
+
+    // Ordenar produções por horário (ascendente)
+    producoesDoDia.sort((a, b) => a.dataProducao.compareTo(b.dataProducao));
+
+    // Criar mapa temporário de lotes por matéria-prima com consumo FIFO
+    final lotesPorMP = <String, List<_LoteConsumicao>>{};
+    for (var lote in _lotes) {
+      lotesPorMP.putIfAbsent(lote.materiaPrimaId, () => []);
+      lotesPorMP[lote.materiaPrimaId]!.add(_LoteConsumicao(lote));
+    }
+    // Ordenar cada lista de lotes por data_recebimento (mais antigo primeiro)
+    for (var entrada in lotesPorMP.entries) {
+      entrada.value
+          .sort((a, b) => a.dataRecebimento.compareTo(b.dataRecebimento));
+    }
 
     // Estimar número total de linhas (produções + matérias-primas)
     int totalLinhas = producoesDoDia.length;
@@ -187,10 +231,17 @@ class RelatoriosViewModel extends ChangeNotifier {
         ),
       );
 
-      // Linhas das matérias-primas consumidas
+      // Linhas das matérias-primas consumidas (com lógica FIFO)
       if (producao.materiaPrimaConsumida.isNotEmpty) {
         for (final entry in producao.materiaPrimaConsumida.entries) {
           final materiaPrima = getMateriaPrimaPorId(entry.key);
+          final quantidadeNecessaria = entry.value;
+          final loteString = _consumirLotes(
+            entry.key,
+            quantidadeNecessaria,
+            lotesPorMP,
+          );
+
           rows.add(
             pw.TableRow(
               children: [
@@ -209,7 +260,7 @@ class RelatoriosViewModel extends ChangeNotifier {
                   padding: const pw.EdgeInsets.all(6),
                   alignment: pw.Alignment.center,
                   child: pw.Text(
-                    getNumeroLoteParaMateriaPrima(entry.key, producao),
+                    loteString,
                     style: pw.TextStyle(
                       font: robotoFont,
                       fontSize: 9,
@@ -220,7 +271,7 @@ class RelatoriosViewModel extends ChangeNotifier {
                   padding: const pw.EdgeInsets.all(6),
                   alignment: pw.Alignment.centerRight,
                   child: pw.Text(
-                    '${entry.value.toStringAsFixed(2)} ${materiaPrima?.unidadeMedida ?? ''}',
+                    '${quantidadeNecessaria.toStringAsFixed(2)} ${materiaPrima?.unidadeMedida ?? ''}',
                     style: pw.TextStyle(
                       font: robotoFont,
                       fontSize: 9,
@@ -307,7 +358,7 @@ class RelatoriosViewModel extends ChangeNotifier {
                         ),
                       ),
                       pw.Text(
-                        'Data: 25/04/2025',
+                        'Data: ${DateFormat('dd/MM/yyyy').format(data)}',
                         style: pw.TextStyle(
                           fontSize: 12,
                           font: robotoFont,
@@ -412,7 +463,7 @@ class RelatoriosViewModel extends ChangeNotifier {
                         padding: const pw.EdgeInsets.all(6),
                         alignment: pw.Alignment.centerLeft,
                         child: pw.Text(
-                          'Responsável: Pedro Luiz ferreira',
+                          'Responsável: Pedro Luiz Ferreira',
                           style: pw.TextStyle(
                             fontSize: 8,
                             font: robotoFont,
@@ -651,12 +702,27 @@ class RelatoriosViewModel extends ChangeNotifier {
     final inicioSemana = data.subtract(Duration(days: data.weekday - 1));
     final fimSemana = inicioSemana.add(const Duration(days: 6));
 
+    // Filtrar produções da semana (inclusive)
     final producoesDaSemana = _producoes
         .where((p) =>
-            p.dataProducao
-                .isAfter(inicioSemana.subtract(const Duration(days: 1))) &&
-            p.dataProducao.isBefore(fimSemana.add(const Duration(days: 1))))
+            !p.dataProducao.isBefore(inicioSemana) &&
+            !p.dataProducao.isAfter(fimSemana.add(const Duration(hours: 23))))
         .toList();
+
+    // Ordenar produções por data (ascendente)
+    producoesDaSemana.sort((a, b) => a.dataProducao.compareTo(b.dataProducao));
+
+    // Criar mapa temporário de lotes por matéria-prima com consumo FIFO
+    final lotesPorMP = <String, List<_LoteConsumicao>>{};
+    for (var lote in _lotes) {
+      lotesPorMP.putIfAbsent(lote.materiaPrimaId, () => []);
+      lotesPorMP[lote.materiaPrimaId]!.add(_LoteConsumicao(lote));
+    }
+    // Ordenar cada lista de lotes por data_recebimento (mais antigo primeiro)
+    for (var entrada in lotesPorMP.entries) {
+      entrada.value
+          .sort((a, b) => a.dataRecebimento.compareTo(b.dataRecebimento));
+    }
 
     // Estimar número total de linhas (produções + matérias-primas)
     int totalLinhas = producoesDaSemana.length;
@@ -710,7 +776,7 @@ class RelatoriosViewModel extends ChangeNotifier {
               padding: const pw.EdgeInsets.all(6),
               alignment: pw.Alignment.centerRight,
               child: pw.Text(
-                '${producao.quantidadeProduzida.toStringAsFixed(2)} btd',
+                '${producao.quantidadeProduzida.toStringAsFixed(02)} btd',
                 style: pw.TextStyle(
                   font: robotoFontBold,
                   fontSize: 10,
@@ -721,10 +787,17 @@ class RelatoriosViewModel extends ChangeNotifier {
         ),
       );
 
-      // Linhas das matérias-primas consumidas
+      // Linhas das matérias-primas consumidas (com lógica FIFO)
       if (producao.materiaPrimaConsumida.isNotEmpty) {
         for (final entry in producao.materiaPrimaConsumida.entries) {
           final materiaPrima = getMateriaPrimaPorId(entry.key);
+          final quantidadeNecessaria = entry.value;
+          final loteString = _consumirLotes(
+            entry.key,
+            quantidadeNecessaria,
+            lotesPorMP,
+          );
+
           rows.add(
             pw.TableRow(
               children: [
@@ -743,7 +816,7 @@ class RelatoriosViewModel extends ChangeNotifier {
                   padding: const pw.EdgeInsets.all(6),
                   alignment: pw.Alignment.center,
                   child: pw.Text(
-                    getNumeroLoteParaMateriaPrima(entry.key, producao),
+                    loteString,
                     style: pw.TextStyle(
                       font: robotoFont,
                       fontSize: 9,
@@ -754,7 +827,7 @@ class RelatoriosViewModel extends ChangeNotifier {
                   padding: const pw.EdgeInsets.all(6),
                   alignment: pw.Alignment.centerRight,
                   child: pw.Text(
-                    '${entry.value.toStringAsFixed(2)} ${materiaPrima?.unidadeMedida ?? ''}',
+                    '${quantidadeNecessaria.toStringAsFixed(2)} ${materiaPrima?.unidadeMedida ?? ''}',
                     style: pw.TextStyle(
                       font: robotoFont,
                       fontSize: 9,
@@ -841,7 +914,7 @@ class RelatoriosViewModel extends ChangeNotifier {
                         ),
                       ),
                       pw.Text(
-                        'Data: 25/04/2025',
+                        'Data: ${DateFormat('dd/MM/yyyy').format(data)}',
                         style: pw.TextStyle(
                           fontSize: 12,
                           font: robotoFont,
@@ -946,7 +1019,7 @@ class RelatoriosViewModel extends ChangeNotifier {
                         padding: const pw.EdgeInsets.all(6),
                         alignment: pw.Alignment.centerLeft,
                         child: pw.Text(
-                          'Responsável: Pedro Luiz ferreira',
+                          'Responsável: Pedro Luiz Ferreira',
                           style: pw.TextStyle(
                             fontSize: 8,
                             font: robotoFont,
@@ -1057,7 +1130,7 @@ class RelatoriosViewModel extends ChangeNotifier {
                 borderRadius: pw.BorderRadius.circular(6),
               ),
               child: pw.Text(
-                'Período: ${DateFormat('dd/MM/yyyy').format(inicioSemana)} a ${DateFormat('dd/MM/yyyy').format(fimSemana)}',
+                'Período: ${DateFormat('dd/MM/yyyy').format(inicioSemana)} - ${DateFormat('dd/MM/yyyy').format(fimSemana)}',
                 style: pw.TextStyle(
                   fontSize: 10,
                   fontWeight: pw.FontWeight.bold,
@@ -1163,8 +1236,7 @@ class RelatoriosViewModel extends ChangeNotifier {
       DateTime dataInicio, DateTime dataFim) async {
     final pdfDoc = pw.Document(
       theme: pw.ThemeData.withFont(
-        base: pw.Font
-            .helvetica(), // Fallback inicial para evitar Helvetica sem Unicode
+        base: pw.Font.helvetica(), // Fallback inicial
         bold: pw.Font.helveticaBold(),
       ),
     );
@@ -1185,15 +1257,29 @@ class RelatoriosViewModel extends ChangeNotifier {
 
     final producoesPeriodo = _producoes
         .where((p) =>
-            p.dataProducao.isAfter(
-                dataInicio.subtract(const Duration(microseconds: 1))) &&
+            !p.dataProducao.isBefore(dataInicio) &&
             p.dataProducao.isBefore(dataFim.add(const Duration(days: 1))))
         .toList();
+
+    // Ordenar produções por data (ascendente)
+    producoesPeriodo.sort((a, b) => a.dataProducao.compareTo(b.dataProducao));
 
     // Limitar o número de produções para evitar excesso de páginas
     if (producoesPeriodo.length > 100) {
       throw Exception(
           'Período selecionado contém muitas produções (${producoesPeriodo.length}). Por favor, reduza o intervalo de datas.');
+    }
+
+    // Criar mapa temporário de lotes por matéria-prima com consumo FIFO
+    final lotesPorMP = <String, List<_LoteConsumicao>>{};
+    for (var lote in _lotes) {
+      lotesPorMP.putIfAbsent(lote.materiaPrimaId, () => []);
+      lotesPorMP[lote.materiaPrimaId]!.add(_LoteConsumicao(lote));
+    }
+    // Ordenar cada lista de lotes por data_recebimento (mais antigo primeiro)
+    for (var entrada in lotesPorMP.entries) {
+      entrada.value
+          .sort((a, b) => a.dataRecebimento.compareTo(b.dataRecebimento));
     }
 
     final List<pw.Widget> productionBlocks = [];
@@ -1210,15 +1296,14 @@ class RelatoriosViewModel extends ChangeNotifier {
           ),
           children: [
             pw.Container(
-              padding:
-                  const pw.EdgeInsets.all(6), // Reduzido de 8 para compactar
+              padding: const pw.EdgeInsets.all(6),
               alignment: pw.Alignment.center,
               child: pw.Text(
                 formula?.nome ?? 'Desconhecida',
                 style: pw.TextStyle(
                   fontWeight: pw.FontWeight.bold,
                   font: robotoFontBold,
-                  fontSize: 10, // Reduzido para compactar
+                  fontSize: 10,
                 ),
               ),
             ),
@@ -1248,10 +1333,17 @@ class RelatoriosViewModel extends ChangeNotifier {
         ),
       );
 
-      // Linhas das matérias-primas consumidas
+      // Linhas das matérias-primas consumidas (com lógica FIFO)
       if (producao.materiaPrimaConsumida.isNotEmpty) {
         for (final entry in producao.materiaPrimaConsumida.entries) {
           final materiaPrima = getMateriaPrimaPorId(entry.key);
+          final quantidadeNecessaria = entry.value;
+          final loteString = _consumirLotes(
+            entry.key,
+            quantidadeNecessaria,
+            lotesPorMP,
+          );
+
           rows.add(
             pw.TableRow(
               children: [
@@ -1262,7 +1354,7 @@ class RelatoriosViewModel extends ChangeNotifier {
                     '  ${materiaPrima?.nome ?? 'Desconhecida'}',
                     style: pw.TextStyle(
                       font: robotoFont,
-                      fontSize: 9, // Reduzido para compactar
+                      fontSize: 9,
                     ),
                   ),
                 ),
@@ -1270,7 +1362,7 @@ class RelatoriosViewModel extends ChangeNotifier {
                   padding: const pw.EdgeInsets.all(6),
                   alignment: pw.Alignment.center,
                   child: pw.Text(
-                    getNumeroLoteParaMateriaPrima(entry.key, producao),
+                    loteString,
                     style: pw.TextStyle(
                       font: robotoFont,
                       fontSize: 9,
@@ -1281,7 +1373,7 @@ class RelatoriosViewModel extends ChangeNotifier {
                   padding: const pw.EdgeInsets.all(6),
                   alignment: pw.Alignment.centerRight,
                   child: pw.Text(
-                    '${entry.value.toStringAsFixed(2)} ${materiaPrima?.unidadeMedida ?? ''}',
+                    '${quantidadeNecessaria.toStringAsFixed(2)} ${materiaPrima?.unidadeMedida ?? ''}',
                     style: pw.TextStyle(
                       font: robotoFont,
                       fontSize: 9,
@@ -1311,7 +1403,7 @@ class RelatoriosViewModel extends ChangeNotifier {
                 2: pw.FlexColumnWidth(2),
               },
             ),
-            pw.SizedBox(height: 5), // Reduzido de 10 para compactar
+            pw.SizedBox(height: 5),
           ],
         ),
       );
@@ -1321,7 +1413,7 @@ class RelatoriosViewModel extends ChangeNotifier {
       pdfDoc.addPage(
         pw.MultiPage(
           pageTheme: pw.PageTheme(
-            margin: pw.EdgeInsets.all(20), // Reduzido de 32 para compactar
+            margin: pw.EdgeInsets.all(20),
             theme: pw.ThemeData.withFont(
               base: robotoFont,
               bold: robotoFontBold,
@@ -1367,7 +1459,7 @@ class RelatoriosViewModel extends ChangeNotifier {
                         ),
                       ),
                       pw.Text(
-                        'Data: 25/04/2025',
+                        'Data: ${DateFormat('dd/MM/yyyy').format(DateTime.now())}',
                         style: pw.TextStyle(
                           fontSize: 12,
                           font: robotoFont,
@@ -1377,7 +1469,7 @@ class RelatoriosViewModel extends ChangeNotifier {
                   ),
                 ],
               ),
-              pw.SizedBox(height: 10), // Reduzido de 16 para compactar
+              pw.SizedBox(height: 10),
               pw.Container(
                 padding: const pw.EdgeInsets.only(bottom: 6),
                 decoration: const pw.BoxDecoration(
@@ -1390,7 +1482,7 @@ class RelatoriosViewModel extends ChangeNotifier {
                     pw.Text(
                       'Página ${context.pageNumber} de ${context.pagesCount}',
                       style: pw.TextStyle(
-                        fontSize: 8, // Reduzido para compactar
+                        fontSize: 8,
                         color: PdfColors.grey600,
                         font: robotoFont,
                       ),
@@ -1402,7 +1494,7 @@ class RelatoriosViewModel extends ChangeNotifier {
           ),
           footer: (pw.Context context) => pw.Column(
             children: [
-              pw.SizedBox(height: 10), // Reduzido de 16
+              pw.SizedBox(height: 10),
               pw.Table(
                 border: pw.TableBorder.all(
                   color: PdfColors.grey400,
@@ -1472,7 +1564,7 @@ class RelatoriosViewModel extends ChangeNotifier {
                         padding: const pw.EdgeInsets.all(6),
                         alignment: pw.Alignment.centerLeft,
                         child: pw.Text(
-                          'Responsável: Pedro Luiz ferreira',
+                          'Responsável: Pedro Luiz Ferreira',
                           style: pw.TextStyle(
                             fontSize: 8,
                             font: robotoFont,
@@ -1577,13 +1669,13 @@ class RelatoriosViewModel extends ChangeNotifier {
           ),
           build: (pw.Context context) => [
             pw.Container(
-              padding: const pw.EdgeInsets.all(12), // Reduzido de 16
+              padding: const pw.EdgeInsets.all(12),
               decoration: pw.BoxDecoration(
                 color: PdfColors.grey100,
                 borderRadius: pw.BorderRadius.circular(6),
               ),
               child: pw.Text(
-                'Período: ${DateFormat('dd/MM/yyyy').format(dataInicio)} a ${DateFormat('dd/MM/yyyy').format(dataFim)}',
+                'Período: ${DateFormat('dd/MM/yyyy').format(dataInicio)} - ${DateFormat('dd/MM/yyyy').format(dataFim)}',
                 style: pw.TextStyle(
                   fontSize: 10,
                   fontWeight: pw.FontWeight.bold,
@@ -1592,7 +1684,7 @@ class RelatoriosViewModel extends ChangeNotifier {
                 ),
               ),
             ),
-            pw.SizedBox(height: 15), // Reduzido de 20
+            pw.SizedBox(height: 15),
             if (productionBlocks.isEmpty)
               pw.Container(
                 padding: const pw.EdgeInsets.all(12),
@@ -1603,7 +1695,7 @@ class RelatoriosViewModel extends ChangeNotifier {
                 child: pw.Text(
                   'Nenhuma produção registrada neste período.',
                   style: pw.TextStyle(
-                    fontSize: 12, // Reduzido de 14
+                    fontSize: 12,
                     color: PdfColors.red800,
                     font: robotoFont,
                   ),
@@ -1679,7 +1771,7 @@ class RelatoriosViewModel extends ChangeNotifier {
       );
     } catch (e) {
       throw Exception(
-          'Erro ao gerar relatório: Número excessivo de páginas. Tente um período menor ou contate o suporte. Detalhes: $e');
+          'Erro ao gerar relatório: Número excessivo de páginas ou de dados. Tente um período menor ou contate o suporte. Detalhes: $e');
     }
 
     return await pdfDoc.save();
