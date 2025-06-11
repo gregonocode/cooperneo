@@ -683,7 +683,12 @@ class RelatoriosViewModel extends ChangeNotifier {
         bold: pw.Font.helveticaBold(),
       ),
     );
-
+    // 👇 Carregar a logo
+    final logo = pw.MemoryImage(
+      (await rootBundle.load('assets/images/documento.png'))
+          .buffer
+          .asUint8List(),
+    );
     Map<String, pw.Font> fonts;
     try {
       fonts = await _loadRobotoFonts();
@@ -828,13 +833,26 @@ class RelatoriosViewModel extends ChangeNotifier {
           crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
             pw.Row(
-              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: pw.CrossAxisAlignment.center,
               children: [
-                pw.Text('Controle de Produção Semanal-Mistura/Ensaque',
-                    style: pw.TextStyle(
-                        fontSize: 16,
-                        fontWeight: pw.FontWeight.bold,
-                        font: robotoFont)),
+                // 👉 Logo à esquerda
+                pw.Container(
+                  width: 40,
+                  height: 40,
+                  margin: const pw.EdgeInsets.only(right: 10),
+                  child: pw.Image(logo),
+                ),
+                // 👉 Título ao lado da logo
+                pw.Expanded(
+                    child: pw.Text(
+                  'Controle de Produção Semanal-Mistura/Ensaque',
+                  textAlign: pw.TextAlign.left,
+                  style: pw.TextStyle(
+                    fontSize: 14,
+                    fontWeight: pw.FontWeight.bold,
+                    font: robotoFont,
+                  ),
+                )),
                 pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.start,
                     children: [
