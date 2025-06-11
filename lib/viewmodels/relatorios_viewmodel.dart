@@ -776,23 +776,6 @@ class RelatoriosViewModel extends ChangeNotifier {
           ),
         );
       }
-      // Adiciona a linha de Quantidade de Ensaque
-      rows.add(
-        pw.TableRow(
-          children: [
-            pw.Container(
-              padding: const pw.EdgeInsets.all(6),
-              alignment: pw.Alignment.centerLeft,
-              child: pw.Text(
-                'Quantidade de ensaque: ',
-                style: pw.TextStyle(font: robotoFontBold, fontSize: 10),
-              ),
-            ),
-            pw.Container(), // Célula vazia para manter a estrutura da tabela
-            pw.Container(), // Célula vazia para manter a estrutura da tabela
-          ],
-        ),
-      );
       productionBlocks.add(
         pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
           pw.Table(
@@ -803,6 +786,31 @@ class RelatoriosViewModel extends ChangeNotifier {
               1: pw.FlexColumnWidth(2),
               2: pw.FlexColumnWidth(2)
             },
+          ),
+          pw.Table(
+            border: pw.TableBorder(
+              top: pw.BorderSide(color: PdfColors.grey400, width: 0.5),
+              bottom: pw.BorderSide(color: PdfColors.grey400, width: 0.5),
+              left: pw.BorderSide(color: PdfColors.grey400, width: 0.5),
+              right: pw.BorderSide(color: PdfColors.grey400, width: 0.5),
+              horizontalInside: pw.BorderSide.none,
+              verticalInside: pw.BorderSide.none,
+            ),
+            columnWidths: {0: pw.FlexColumnWidth(1)},
+            children: [
+              pw.TableRow(
+                children: [
+                  pw.Container(
+                    padding: const pw.EdgeInsets.all(6),
+                    alignment: pw.Alignment.centerLeft,
+                    child: pw.Text(
+                      'Quantidade de ensaque: ',
+                      style: pw.TextStyle(font: robotoFontBold, fontSize: 10),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
           pw.SizedBox(height: 5),
         ]),
@@ -832,7 +840,7 @@ class RelatoriosViewModel extends ChangeNotifier {
                     children: [
                       pw.RichText(
                           text: pw.TextSpan(
-                              text: 'N° Documentário: ',
+                              text: 'N° Documento: ',
                               style:
                                   pw.TextStyle(font: robotoFont, fontSize: 12),
                               children: [
