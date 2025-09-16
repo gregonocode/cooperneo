@@ -66,6 +66,30 @@ class _ProducaoScreenState extends State<ProducaoScreen>
             Tab(text: 'Fórmulas'),
           ],
         ),
+        actions: [
+          if (_tabController.index == 0)
+            PopupMenuButton<String>(
+              onSelected: (value) {
+                if (value == 'excluir_todas') {
+                  _showExcluirTodasProducoesDialog(context);
+                }
+              },
+              itemBuilder: (context) => [
+                const PopupMenuItem(
+                  value: 'excluir_todas',
+                  child: Row(
+                    children: [
+                      Icon(Icons.delete_forever, color: Colors.red),
+                      SizedBox(width: 8),
+                      Text("Excluir Todas as Produções"),
+                    ],
+                  ),
+                ),
+              ],
+            )
+          else
+            const SizedBox.shrink(), // garante que sempre retorne um widget
+        ],
       ),
       body: Column(
         children: [
@@ -426,29 +450,58 @@ class _ProducaoScreenState extends State<ProducaoScreen>
               Padding(
                 padding: const EdgeInsets.all(16.0),
                 child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    ElevatedButton.icon(
-                      onPressed: () {
-                        _showDeleteConfirmationDialog(
-                          context,
-                          'Excluir Produção',
-                          'Deseja realmente excluir a produção do lote "${producao.loteProducao}"? Esta ação não pode ser desfeita.',
-                          () => viewModel.excluirProducao(producao.id),
-                          viewModel: viewModel,
-                          entityType: 'producao',
-                        );
-                      },
-                      icon: const Icon(Icons.delete, size: 18),
-                      label: const Text('Excluir'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red,
-                        foregroundColor: Colors.white,
+                    // EDITAR (azul)
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          Navigator.pop(context); // fecha o dialog de detalhes
+                          _showEditarProducaoDialog(context, producao);
+                        },
+                        icon: const Icon(Icons.edit, size: 18),
+                        label: const Text('Editar'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
                       ),
                     ),
-                    ElevatedButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('Cancelar'),
+                    const SizedBox(width: 12),
+
+                    // EXCLUIR (vermelho)
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          _showDeleteConfirmationDialog(
+                            context,
+                            'Excluir Produção',
+                            'Deseja realmente excluir a produção do lote "${producao.loteProducao}"? Esta ação não pode ser desfeita.',
+                            () => viewModel.excluirProducao(producao.id),
+                            viewModel: viewModel,
+                            entityType: 'producao',
+                          );
+                        },
+                        icon: const Icon(Icons.delete, size: 18),
+                        label: const Text('Excluir'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+
+                    // CANCELAR (neutro)
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Cancelar'),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -1095,6 +1148,87 @@ class _ProducaoScreenState extends State<ProducaoScreen>
     );
   }
 
+  void _showEditarProducaoDialog(BuildContext context, Producao producao) {
+    final producaoViewModel =
+        Provider.of<ProducaoViewModel>(context, listen: false);
+    final _formKey = GlobalKey<FormState>();
+
+    String loteProducao = producao.loteProducao;
+    double quantidade = producao.quantidadeProduzida;
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Editar Produção'),
+          content: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  initialValue: loteProducao,
+                  decoration:
+                      const InputDecoration(labelText: 'Lote de Produção'),
+                  validator: (v) =>
+                      v == null || v.isEmpty ? 'Informe o lote' : null,
+                  onSaved: (v) => loteProducao = v ?? '',
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  initialValue: quantidade.toString(),
+                  decoration: const InputDecoration(
+                      labelText: 'Quantidade Produzida (btd)'),
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  validator: (v) {
+                    if (v == null || v.isEmpty) return 'Informe a quantidade';
+                    if (double.tryParse(v) == null) return 'Número inválido';
+                    return null;
+                  },
+                  onSaved: (v) => quantidade = double.parse(v!),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                if (_formKey.currentState!.validate()) {
+                  _formKey.currentState!.save();
+                  Navigator.pop(ctx);
+
+                  final success = await producaoViewModel.atualizarProducao(
+                    id: producao.id,
+                    formulaId: producao
+                        .formulaId, // se um dia quiser trocar fórmula, mude aqui
+                    quantidadeProduzida: quantidade,
+                    loteProducao: loteProducao,
+                    dataProducao: producao.dataProducao,
+                  );
+
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(success
+                          ? 'Produção atualizada com sucesso'
+                          : 'Erro ao atualizar produção'),
+                      backgroundColor: success ? Colors.green : Colors.red,
+                    ),
+                  );
+                }
+              },
+              child: const Text('Salvar'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   void _showEditFormulaDialog(BuildContext context, Formula formula) {
     final producaoViewModel =
         Provider.of<ProducaoViewModel>(context, listen: false);
@@ -1253,6 +1387,83 @@ class _ProducaoScreenState extends State<ProducaoScreen>
                     }
                   },
                   child: const Text('Salvar'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showExcluirTodasProducoesDialog(BuildContext context) {
+    final producaoViewModel =
+        Provider.of<ProducaoViewModel>(context, listen: false);
+    final TextEditingController _controller = TextEditingController();
+    bool isEnabled = false;
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('Excluir Todas as Produções'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'Digite EXCLUIR para confirmar a exclusão de todas as produções. Esta ação não pode ser desfeita.',
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _controller,
+                    onChanged: (value) {
+                      setState(() {
+                        isEnabled = value.trim().toUpperCase() == 'EXCLUIR';
+                      });
+                    },
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                      labelText: 'Digite EXCLUIR',
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancelar'),
+                ),
+                ElevatedButton(
+                  onPressed: isEnabled
+                      ? () async {
+                          Navigator.pop(context);
+                          // Mostra loading
+                          showDialog(
+                            context: context,
+                            barrierDismissible: false,
+                            builder: (_) => const Center(
+                              child: CircularProgressIndicator(),
+                            ),
+                          );
+                          final success =
+                              await producaoViewModel.excluirTodasProducoes();
+                          Navigator.of(context, rootNavigator: true)
+                              .pop(); // fecha loading
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(success
+                                  ? 'Todas as produções foram excluídas'
+                                  : 'Erro ao excluir produções'),
+                              backgroundColor:
+                                  success ? Colors.green : Colors.red,
+                            ),
+                          );
+                        }
+                      : null,
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                  child: const Text('Excluir Tudo'),
                 ),
               ],
             );

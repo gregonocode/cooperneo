@@ -32,30 +32,18 @@ class ProducaoViewModel extends ChangeNotifier {
       _isLoading = true;
       notifyListeners();
 
-      // Carregar fórmulas
-      print('Carregando fórmulas...');
+      // Fórmulas
       _formulas = await _supabaseService.fetchFormulas();
-      print('Fórmulas carregadas: ${_formulas.length}');
-      print('Fórmulas disponíveis: ${_formulas.map((f) => f.id).toList()}');
 
-      // Carregar produções (continua mesmo com erro)
+      // Produções (não falha o fluxo se der erro)
       try {
-        print('Carregando produções...');
         _producoes = await _supabaseService.getProducoes();
-        print('Produções carregadas: ${_producoes.length}');
-        print('Produções disponíveis: ${_producoes.map((p) => p.id).toList()}');
       } catch (e) {
-        print('Erro ao carregar produções: $e');
         _errorMessage = 'Erro ao carregar produções: $e';
-        // Não interrompe o carregamento das matérias-primas
       }
 
-      // Carregar matérias-primas (sempre executa)
-      print('Carregando matérias-primas...');
+      // Matérias-primas
       _materiasPrimas = await _supabaseService.fetchMateriasPrimas();
-      print('Matérias-primas carregadas: ${_materiasPrimas.length}');
-      print(
-          'Matérias-primas disponíveis: ${_materiasPrimas.map((mp) => mp.id).toList()}');
 
       _isLoading = false;
       _errorMessage = null;
@@ -63,7 +51,6 @@ class ProducaoViewModel extends ChangeNotifier {
     } catch (e) {
       _isLoading = false;
       _errorMessage = 'Erro ao carregar dados: $e';
-      print('Erro em carregarDados: $_errorMessage');
       notifyListeners();
     }
   }
@@ -85,19 +72,17 @@ class ProducaoViewModel extends ChangeNotifier {
   Map<String, double> verificarDisponibilidadeProducao(
       String formulaId, double quantidadeProduzida) {
     final formula = getFormulaPorId(formulaId);
-    if (formula == null) {
-      return {};
-    }
+    if (formula == null) return {};
 
-    Map<String, double> disponibilidade = {};
+    final Map<String, double> disponibilidade = {};
 
-    for (var componente in formula.componentes) {
+    for (final componente in formula.componentes) {
       final materiaPrima = getMateriaPrimaPorId(componente.materiaPrimaId);
-      if (materiaPrima == null) {
-        continue;
-      }
+      if (materiaPrima == null) continue;
 
       double quantidadeNecessaria = componente.quantidade * quantidadeProduzida;
+
+      // Conversões usuais
       if (componente.unidadeMedida == 'g' &&
           materiaPrima.unidadeMedida == 'kg') {
         quantidadeNecessaria /= 1000;
@@ -112,8 +97,7 @@ class ProducaoViewModel extends ChangeNotifier {
         quantidadeNecessaria *= 1000;
       }
 
-      double estoqueAtual = materiaPrima.estoqueAtual;
-      double saldo = estoqueAtual - quantidadeNecessaria;
+      final double saldo = materiaPrima.estoqueAtual - quantidadeNecessaria;
       disponibilidade[materiaPrima.nome] = saldo;
     }
 
@@ -124,25 +108,21 @@ class ProducaoViewModel extends ChangeNotifier {
     required String nome,
     required List<ComponenteFormula> componentes,
   }) async {
-    print('Adicionando fórmula: nome=$nome, componentes=$componentes');
     try {
       final success = await _supabaseService.addFormula({
         'nome': nome,
         'componentes': componentes.map((c) => c.toJson()).toList(),
       });
       if (success) {
-        print('Fórmula adicionada com sucesso. Recarregando dados...');
         await carregarDados();
         return true;
       } else {
         _errorMessage = 'Falha ao adicionar fórmula no Supabase';
-        print('Erro: $_errorMessage');
         notifyListeners();
         return false;
       }
     } catch (e) {
       _errorMessage = 'Erro ao adicionar fórmula: $e';
-      print('Erro: $_errorMessage');
       notifyListeners();
       return false;
     }
@@ -154,8 +134,6 @@ class ProducaoViewModel extends ChangeNotifier {
     String? descricao,
     required List<ComponenteFormula> componentes,
   }) async {
-    print(
-        'Atualizando fórmula: id=$id, nome=$nome, descricao=$descricao, componentes=$componentes');
     try {
       final success = await _supabaseService.updateFormula(id, {
         'nome': nome,
@@ -163,18 +141,15 @@ class ProducaoViewModel extends ChangeNotifier {
         'componentes': componentes.map((c) => c.toJson()).toList(),
       });
       if (success) {
-        print('Fórmula atualizada com sucesso. Recarregando dados...');
         await carregarDados();
         return true;
       } else {
         _errorMessage = 'Falha ao atualizar fórmula no Supabase';
-        print('Erro: $_errorMessage');
         notifyListeners();
         return false;
       }
     } catch (e) {
       _errorMessage = 'Erro ao atualizar fórmula: $e';
-      print('Erro: $_errorMessage');
       notifyListeners();
       return false;
     }
@@ -197,77 +172,62 @@ class ProducaoViewModel extends ChangeNotifier {
     }
   }
 
+  // ---------- Produção: criar ----------
   Future<bool> registrarProducao(
       String formulaId, double quantidadeProduzida, String loteProducao) async {
-    print(
-        'Iniciando registrarProducao: formulaId=$formulaId, quantidade=$quantidadeProduzida, lote=$loteProducao');
     try {
-      print('Recarregando dados antes de processar a produção...');
       await carregarDados();
-      print(
-          'Matérias-primas disponíveis após carregarDados: ${_materiasPrimas.map((mp) => mp.id).toList()}');
 
       final formula = getFormulaPorId(formulaId);
       if (formula == null) {
         throw Exception('Fórmula não encontrada: $formulaId');
       }
-      print('Fórmula encontrada: ${formula.nome}');
 
-      Map<String, double> materiaPrimaConsumida = {};
-      for (var componente in formula.componentes) {
-        final materiaPrima = getMateriaPrimaPorId(componente.materiaPrimaId);
-        if (materiaPrima == null) {
+      // Calcula consumo e valida estoque
+      final Map<String, double> materiaPrimaConsumida = {};
+      for (final componente in formula.componentes) {
+        final mp = getMateriaPrimaPorId(componente.materiaPrimaId);
+        if (mp == null) {
           throw Exception(
               'Matéria-prima não encontrada: ${componente.materiaPrimaId}');
         }
-        print(
-            'Matéria-prima encontrada: ${materiaPrima.nome}, ID: ${materiaPrima.id}');
 
-        double quantidadeConsumida =
-            componente.quantidade * quantidadeProduzida;
-        if (componente.unidadeMedida == 'g' &&
-            materiaPrima.unidadeMedida == 'kg') {
-          quantidadeConsumida /= 1000;
+        double qtd = componente.quantidade * quantidadeProduzida;
+        if (componente.unidadeMedida == 'g' && mp.unidadeMedida == 'kg') {
+          qtd /= 1000;
         } else if (componente.unidadeMedida == 'kg' &&
-            materiaPrima.unidadeMedida == 'g') {
-          quantidadeConsumida *= 1000;
+            mp.unidadeMedida == 'g') {
+          qtd *= 1000;
         } else if (componente.unidadeMedida == 'mL' &&
-            materiaPrima.unidadeMedida == 'L') {
-          quantidadeConsumida /= 1000;
+            mp.unidadeMedida == 'L') {
+          qtd /= 1000;
         } else if (componente.unidadeMedida == 'L' &&
-            materiaPrima.unidadeMedida == 'mL') {
-          quantidadeConsumida *= 1000;
+            mp.unidadeMedida == 'mL') {
+          qtd *= 1000;
         }
-        print(
-            'Quantidade consumida calculada: $quantidadeConsumida para ${materiaPrima.nome}');
 
-        double estoqueAtual = materiaPrima.estoqueAtual;
-        if (estoqueAtual < quantidadeConsumida) {
+        if (mp.estoqueAtual < qtd) {
           throw Exception(
-              'Estoque insuficiente para ${materiaPrima.nome}: $estoqueAtual < $quantidadeConsumida');
+              'Estoque insuficiente para ${mp.nome}: ${mp.estoqueAtual} < $qtd');
         }
-        print('Estoque suficiente: $estoqueAtual >= $quantidadeConsumida');
 
-        materiaPrimaConsumida[materiaPrima.id] = quantidadeConsumida;
+        materiaPrimaConsumida[mp.id] = qtd;
       }
 
-      for (var entry in materiaPrimaConsumida.entries) {
-        final materiaPrimaId = int.parse(entry.key);
-        final quantidadeConsumida = entry.value;
-        final materiaPrima = _materiasPrimas.firstWhere(
-          (mp) => mp.id == entry.key,
+      // Abate estoque
+      for (final e in materiaPrimaConsumida.entries) {
+        final mp = _materiasPrimas.firstWhere(
+          (m) => m.id == e.key,
           orElse: () => throw Exception(
-              'Matéria-prima não encontrada ao atualizar estoque: ${entry.key}'),
+              'MP não encontrada ao atualizar estoque: ${e.key}'),
         );
-        print(
-            'Atualizando estoque de ${materiaPrima.nome}: ${materiaPrima.estoqueAtual} - $quantidadeConsumida');
         await _supabaseService.updateMateriaPrima(
-          materiaPrimaId,
-          {'estoque_atual': materiaPrima.estoqueAtual - quantidadeConsumida},
+          int.parse(mp.id),
+          {'estoque_atual': mp.estoqueAtual - e.value},
         );
-        print('Estoque atualizado para ${materiaPrima.nome}');
       }
 
+      // Persiste produção
       final producao = Producao(
         id: '',
         formulaId: formulaId,
@@ -276,79 +236,201 @@ class ProducaoViewModel extends ChangeNotifier {
         materiaPrimaConsumida: materiaPrimaConsumida,
         dataProducao: DateTime.now(),
       );
-      print('Produção criada: $producao');
 
-      final success = await _supabaseService.saveProducao(producao);
-      if (success) {
-        print('Produção registrada com sucesso');
-        await carregarDados();
-        return true;
+      final ok = await _supabaseService.saveProducao(producao);
+      if (!ok) {
+        _errorMessage = 'Erro ao salvar produção no Supabase';
+        notifyListeners();
+        return false;
       }
-      _errorMessage = 'Erro ao salvar produção no Supabase';
-      print('Erro: $_errorMessage');
-      notifyListeners();
-      return false;
+
+      await carregarDados();
+      return true;
     } catch (e) {
       _errorMessage = 'Erro ao registrar produção: $e';
-      print('Erro capturado: $_errorMessage');
       notifyListeners();
       return false;
     }
   }
 
-  Future<bool> excluirProducao(String id) async {
+  // ---------- Helper: consumo por MP para (fórmula, quantidade) ----------
+  Map<String, double> _calcularConsumoPorMateriaPrima(
+    String formulaId,
+    double quantidadeProduzida,
+  ) {
+    final formula = getFormulaPorId(formulaId);
+    if (formula == null) {
+      throw Exception('Fórmula não encontrada para cálculo: $formulaId');
+    }
+
+    final Map<String, double> consumo = {};
+
+    for (final componente in formula.componentes) {
+      final mp = getMateriaPrimaPorId(componente.materiaPrimaId);
+      if (mp == null) continue;
+
+      double qtd = componente.quantidade * quantidadeProduzida;
+
+      if (componente.unidadeMedida == 'g' && mp.unidadeMedida == 'kg') {
+        qtd /= 1000;
+      } else if (componente.unidadeMedida == 'kg' && mp.unidadeMedida == 'g') {
+        qtd *= 1000;
+      } else if (componente.unidadeMedida == 'mL' && mp.unidadeMedida == 'L') {
+        qtd /= 1000;
+      } else if (componente.unidadeMedida == 'L' && mp.unidadeMedida == 'mL') {
+        qtd *= 1000;
+      }
+
+      consumo[mp.id] = (consumo[mp.id] ?? 0) + qtd;
+    }
+
+    return consumo;
+  }
+
+  // ---------- Produção: atualizar com delta de estoque ----------
+  Future<bool> atualizarProducao({
+    required String id,
+    required String formulaId,
+    required double quantidadeProduzida,
+    required String loteProducao,
+    DateTime? dataProducao,
+  }) async {
     try {
-      print('Excluindo produção: id=$id');
-      final producao = _producoes.firstWhereOrNull((p) => p.id == id);
-      if (producao == null) {
-        _errorMessage = 'Produção não encontrada: $id';
-        print('Erro: $_errorMessage');
+      await carregarDados();
+
+      // Produção original
+      final producaoAntiga = _producoes.firstWhere(
+        (p) => p.id == id,
+        orElse: () => throw Exception('Produção não encontrada: $id'),
+      );
+
+      final Map<String, double> consumoAntigo =
+          Map<String, double>.from(producaoAntiga.materiaPrimaConsumida);
+
+      // Recalcula consumo novo
+      final Map<String, double> consumoNovo =
+          _calcularConsumoPorMateriaPrima(formulaId, quantidadeProduzida);
+
+      // Deltas (novo - antigo)
+      final Set<String> todasMPs = {...consumoAntigo.keys, ...consumoNovo.keys};
+
+      // Validação: para deltas positivos precisa ter estoque
+      for (final mpId in todasMPs) {
+        final mp = getMateriaPrimaPorId(mpId);
+        if (mp == null) continue;
+
+        final double antigo = consumoAntigo[mpId] ?? 0.0;
+        final double novo = consumoNovo[mpId] ?? 0.0;
+        final double delta = novo - antigo;
+
+        if (delta > 0 && mp.estoqueAtual < delta) {
+          throw Exception(
+            'Estoque insuficiente para ${mp.nome}: disponível ${mp.estoqueAtual.toStringAsFixed(2)} < necessário ${delta.toStringAsFixed(2)}',
+          );
+        }
+      }
+
+      // Aplica deltas ao estoque (delta>0 consome; delta<0 devolve)
+      for (final mpId in todasMPs) {
+        final mp = getMateriaPrimaPorId(mpId);
+        if (mp == null) continue;
+
+        final double antigo = consumoAntigo[mpId] ?? 0.0;
+        final double novo = consumoNovo[mpId] ?? 0.0;
+        final double delta = novo - antigo;
+
+        if (delta == 0) continue;
+
+        final double novoEstoque = mp.estoqueAtual - delta;
+        await _supabaseService.updateMateriaPrima(
+          int.parse(mp.id),
+          {'estoque_atual': novoEstoque},
+        );
+      }
+
+      // Persiste a produção atualizada
+      final payload = {
+        'formula_id': formulaId,
+        'quantidade_produzida': quantidadeProduzida,
+        'lote_producao': loteProducao,
+        'materia_prima_consumida': consumoNovo,
+        'data_producao':
+            (dataProducao ?? producaoAntiga.dataProducao).toIso8601String(),
+      };
+
+      final ok = await _supabaseService.updateProducao(id, payload);
+      if (!ok) {
+        _errorMessage = 'Erro ao atualizar produção';
         notifyListeners();
         return false;
       }
 
-      // Reverter o consumo de matérias-primas
-      for (var entry in producao.materiaPrimaConsumida.entries) {
-        final materiaPrimaId = entry.key;
-        final quantidadeConsumida = entry.value;
-        final materiaPrima =
-            _materiasPrimas.firstWhereOrNull((mp) => mp.id == materiaPrimaId);
-        if (materiaPrima == null) {
-          print('Matéria-prima não encontrada para reversão: $materiaPrimaId');
-          continue;
-        }
-        print(
-            'Reverting estoque para ${materiaPrima.nome}: ${materiaPrima.estoqueAtual} + $quantidadeConsumida');
-        final success = await _supabaseService.updateMateriaPrima(
-          int.parse(materiaPrimaId),
-          {'estoque_atual': materiaPrima.estoqueAtual + quantidadeConsumida},
+      await carregarDados();
+      return true;
+    } catch (e) {
+      _errorMessage = 'Erro ao atualizar produção: $e';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  // ---------- Produção: excluir (reverte estoque) ----------
+  Future<bool> excluirProducao(String id) async {
+    try {
+      final producao = _producoes.firstWhereOrNull((p) => p.id == id);
+      if (producao == null) {
+        _errorMessage = 'Produção não encontrada: $id';
+        notifyListeners();
+        return false;
+      }
+
+      // Devolve estoque consumido
+      for (final entry in producao.materiaPrimaConsumida.entries) {
+        final mpId = entry.key;
+        final qtd = entry.value;
+
+        final mp = _materiasPrimas.firstWhereOrNull((m) => m.id == mpId);
+        if (mp == null) continue;
+
+        final ok = await _supabaseService.updateMateriaPrima(
+          int.parse(mpId),
+          {'estoque_atual': mp.estoqueAtual + qtd},
         );
-        if (!success) {
-          _errorMessage = 'Erro ao reverter estoque para ${materiaPrima.nome}';
-          print('Erro: $_errorMessage');
+        if (!ok) {
+          _errorMessage = 'Erro ao reverter estoque para ${mp.nome}';
           notifyListeners();
           return false;
         }
-        print('Estoque revertido para ${materiaPrima.nome}');
       }
 
-      // Excluir a produção
-      final success = await _supabaseService.deleteProducao(id);
-      if (success) {
-        print('Produção excluída com sucesso. Recarregando dados...');
-        await carregarDados();
-        _errorMessage = null;
+      // Remove a produção
+      final okDelete = await _supabaseService.deleteProducao(id);
+      if (!okDelete) {
+        _errorMessage = 'Erro ao excluir produção no Supabase';
         notifyListeners();
-        return true;
+        return false;
       }
-      _errorMessage = 'Erro ao excluir produção no Supabase';
-      print('Erro: $_errorMessage');
+
+      await carregarDados();
+      _errorMessage = null;
       notifyListeners();
-      return false;
+      return true;
     } catch (e) {
       _errorMessage = 'Erro ao excluir produção: $e';
-      print('Erro: $_errorMessage');
       notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> excluirTodasProducoes() async {
+    try {
+      final result = await _supabaseService.deleteAllProducoes();
+      if (result) {
+        await carregarDados();
+      }
+      return result;
+    } catch (e) {
+      _errorMessage = 'Erro ao excluir todas as produções: $e';
       return false;
     }
   }

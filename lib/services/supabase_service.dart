@@ -143,6 +143,18 @@ class SupabaseService {
     }
   }
 
+  Future<bool> updateProducao(String id, Map<String, dynamic> data) async {
+    try {
+      print('Atualizando produção $id com dados: $data');
+      await _client.from('producoes').update(data).eq('id', id);
+      print('Produção atualizada com sucesso no Supabase');
+      return true;
+    } catch (e) {
+      print('Erro ao atualizar produção no Supabase: $e');
+      return false;
+    }
+  }
+
   Future<bool> deleteProducao(String id) async {
     try {
       print('Tentando deletar produção no Supabase: id=$id');
@@ -264,6 +276,19 @@ class SupabaseService {
       return true;
     } catch (e) {
       print('Erro ao adicionar lote no Supabase: $e');
+      return false;
+    }
+  }
+
+  // Excluir TODAS as produções
+  Future<bool> deleteAllProducoes() async {
+    try {
+      print('Excluindo todas as produções no Supabase...');
+      await _client.from('producoes').delete();
+      print('Todas as produções foram excluídas com sucesso!');
+      return true;
+    } catch (e) {
+      print('Erro ao excluir todas as produções: $e');
       return false;
     }
   }
