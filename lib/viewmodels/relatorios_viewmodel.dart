@@ -91,22 +91,50 @@ class RelatoriosViewModel extends ChangeNotifier {
       if (lote.quantidadeAtual <= 0) continue;
 
       if (lote.quantidadeAtual >= restante) {
-        // Este lote supre toda a quantidade restante
         lote.quantidadeAtual -= restante;
         usados.add(lote.numeroLote);
         restante = 0;
         break;
       } else {
-        // Lote não é suficiente: usa todo o restante dele e segue para o próximo lote
+        restante -= lote.quantidadeAtual;
+        usados.add(lote.numeroLote);
+        lote.quantidadeAtual = 0;
+      }
+    }
+    return usados.join('/');
+  }
+
+  /// Igual ao _consumirLotes, mas só permite consumir lotes cuja dataRecebimento
+  /// seja <= dataCorte (ex.: data da produção). Útil para sincronizar consumo por data.
+  String _consumirLotesAteData(
+    String materiaPrimaId,
+    double quantidadeNecessaria,
+    Map<String, List<_LoteConsumicao>> lotesPorMP,
+    DateTime dataCorte,
+  ) {
+    final fila = lotesPorMP[materiaPrimaId] ?? [];
+    final usados = <String>[];
+    var restante = quantidadeNecessaria;
+
+    for (final lote in fila) {
+      if (lote.dataRecebimento.isAfter(dataCorte)) {
+        // Não pode usar lote do futuro para essa produção
+        continue;
+      }
+      if (lote.quantidadeAtual <= 0) continue;
+
+      if (lote.quantidadeAtual >= restante) {
+        lote.quantidadeAtual -= restante;
+        usados.add(lote.numeroLote);
+        restante = 0;
+        break;
+      } else {
         restante -= lote.quantidadeAtual;
         usados.add(lote.numeroLote);
         lote.quantidadeAtual = 0;
       }
     }
 
-    // Se após consumir todos os lotes disponíveis ainda houver restante,
-    // podemos simplesmente exibir os que já foram usados; em sistemas reais,
-    // talvez queiramos registrar "Falta X" ou algo similar. Aqui, apenas retornamos.
     return usados.join('/');
   }
 
@@ -163,9 +191,15 @@ class RelatoriosViewModel extends ChangeNotifier {
     // Ordenar produções por horário (ascendente)
     producoesDoDia.sort((a, b) => a.dataProducao.compareTo(b.dataProducao));
 
-    // Criar mapa temporário de lotes por matéria-prima com consumo FIFO
+    // ===== FIFO de lotes FILTRADO pelo dia =====
+    final inicioDia = DateTime(data.year, data.month, data.day);
+    final fimExclusivo = inicioDia.add(const Duration(days: 1));
+    final lotesDoDia = _lotes.where((l) =>
+        !l.dataRecebimento.isBefore(inicioDia) &&
+        l.dataRecebimento.isBefore(fimExclusivo));
+
     final lotesPorMP = <String, List<_LoteConsumicao>>{};
-    for (var lote in _lotes) {
+    for (var lote in lotesDoDia) {
       lotesPorMP.putIfAbsent(lote.materiaPrimaId, () => []);
       lotesPorMP[lote.materiaPrimaId]!.add(_LoteConsumicao(lote));
     }
@@ -497,7 +531,7 @@ class RelatoriosViewModel extends ChangeNotifier {
                       padding: const pw.EdgeInsets.all(6),
                       alignment: pw.Alignment.centerLeft,
                       child: pw.Text(
-                        'Responsável: Pedro Luiz Ferreira',
+                        '怨sponsável: Pedro Luiz Ferreira',
                         style: pw.TextStyle(font: robotoFont, fontSize: 8),
                       ),
                     ),
@@ -637,8 +671,18 @@ class RelatoriosViewModel extends ChangeNotifier {
         .toList();
     producoesDaSemana.sort((a, b) => a.dataProducao.compareTo(b.dataProducao));
 
+    // ===== FIFO de lotes FILTRADO pela semana =====
+    final fimExclusivo = DateTime(
+      fimSemana.year,
+      fimSemana.month,
+      fimSemana.day,
+    ).add(const Duration(days: 1));
+    final lotesDaSemana = _lotes.where((l) =>
+        !l.dataRecebimento.isBefore(inicioSemana) &&
+        l.dataRecebimento.isBefore(fimExclusivo));
+
     final lotesPorMP = <String, List<_LoteConsumicao>>{};
-    for (var lote in _lotes) {
+    for (var lote in lotesDaSemana) {
       lotesPorMP.putIfAbsent(lote.materiaPrimaId, () => []);
       lotesPorMP[lote.materiaPrimaId]!.add(_LoteConsumicao(lote));
     }
@@ -648,10 +692,12 @@ class RelatoriosViewModel extends ChangeNotifier {
     }
 
     int totalLinhas = producoesDaSemana.length;
-    for (var p in producoesDaSemana)
+    for (var p in producoesDaSemana) {
       totalLinhas += p.materiaPrimaConsumida.length;
-    if (totalLinhas > 1000)
+    }
+    if (totalLinhas > 1000) {
       throw Exception('Semana contém muitas entradas ($totalLinhas linhas).');
+    }
 
     final productionBlocks = <pw.Widget>[];
     for (var prod in producoesDaSemana) {
@@ -959,7 +1005,7 @@ class RelatoriosViewModel extends ChangeNotifier {
                 decoration: pw.BoxDecoration(
                     color: PdfColors.red100,
                     borderRadius: pw.BorderRadius.circular(6)),
-                child: pw.Text('Nenhuma produção registrada nesta semana.',
+                child: pw.Text('Nenhuma produção registrado nesta semana.',
                     style: pw.TextStyle(
                         font: robotoFont,
                         fontSize: 12,
@@ -973,25 +1019,105 @@ class RelatoriosViewModel extends ChangeNotifier {
     return await pdfDoc.save();
   }
 
-  List<pw.Widget> _construirBlocosParaLotes({
-    required List<String> lotesDaParte,
-    required Map<String, List<Producao>> gruposPorLote,
-    required Map<String, List<_LoteConsumicao>> lotesPorMP,
-    required pw.Font robotoFont,
-    required pw.Font robotoFontBold,
-  }) {
-    final List<pw.Widget> conteudo = [];
+  // Helper: constrói o mapa FIFO até um corte (usa quantidadeAtual dos lotes no banco, sem "reconstruir" saldo)
+  Map<String, List<_LoteConsumicao>> _buildLotesFIFOMap(
+      DateTime dataFimExclusivo) {
+    final lotesPorMP = <String, List<_LoteConsumicao>>{};
+    for (final lote
+        in _lotes.where((l) => l.dataRecebimento.isBefore(dataFimExclusivo))) {
+      lotesPorMP.putIfAbsent(lote.materiaPrimaId, () => []);
+      lotesPorMP[lote.materiaPrimaId]!.add(_LoteConsumicao(lote));
+    }
+    for (final e in lotesPorMP.entries) {
+      e.value.sort((a, b) => a.dataRecebimento.compareTo(b.dataRecebimento));
+    }
+    return lotesPorMP;
+  }
+
+  Future<Uint8List> gerarRelatorioPersonalizadoPDF(
+      DateTime dataInicio, DateTime dataFim) async {
+    final pdfDoc = pw.Document(
+      theme: pw.ThemeData.withFont(
+        base: pw.Font.helvetica(),
+        bold: pw.Font.helveticaBold(),
+      ),
+    );
+
+    // Logo
+    final logo = pw.MemoryImage(
+      (await rootBundle.load('assets/images/documento.png'))
+          .buffer
+          .asUint8List(),
+    );
+
+    // Fontes
+    Map<String, pw.Font> fonts;
+    try {
+      fonts = await _loadRobotoFonts();
+    } catch (e) {
+      fonts = {
+        'regular': pw.Font.helvetica(),
+        'bold': pw.Font.helveticaBold(),
+      };
+    }
+    final robotoFont = fonts['regular']!;
+    final robotoFontBold = fonts['bold']!;
+
+    // ===== FIFO de lotes SEM reconstrução (evita subtrair "de novo" produções anteriores) =====
+    // Considera lotes até o fim do período (não usa lote "do futuro")
+    final fimExclusivo = DateTime(dataFim.year, dataFim.month, dataFim.day)
+        .add(const Duration(days: 1));
+
+    // 1) Monta fila global por MP com lotes até dataFim (ordenado por dataRecebimento)
+    final lotesPorMP = _buildLotesFIFOMap(fimExclusivo);
+
+    // 2) Seleciona produções dentro do período (ordenadas)
+    final producoesPeriodo = _producoes
+        .where((p) =>
+            !p.dataProducao.isBefore(dataInicio) &&
+            p.dataProducao.isBefore(dataFim.add(const Duration(days: 1))))
+        .toList()
+      ..sort((a, b) => a.dataProducao.compareTo(b.dataProducao));
+
+    // Limite de linhas
+    int totalLinhas = producoesPeriodo.length;
+    for (final p in producoesPeriodo) {
+      totalLinhas += p.materiaPrimaConsumida.length;
+    }
+    if (totalLinhas > 1000) {
+      throw Exception(
+          'Período selecionado contém muitas entradas ($totalLinhas linhas). Reduza o intervalo.');
+    }
+
+    // ===== AGRUPAMENTO POR Lote de Produção (mantido) =====
+    final Map<String, List<Producao>> gruposPorLote = {};
+    for (final p in producoesPeriodo) {
+      gruposPorLote.putIfAbsent(p.loteProducao, () => []);
+      gruposPorLote[p.loteProducao]!.add(p);
+    }
+
+    final lotesOrdenados = gruposPorLote.keys.toList()
+      ..sort((a, b) {
+        final ap = gruposPorLote[a]!
+          ..sort((x, y) => x.dataProducao.compareTo(y.dataProducao));
+        final bp = gruposPorLote[b]!
+          ..sort((x, y) => x.dataProducao.compareTo(y.dataProducao));
+        final cmp = ap.first.dataProducao.compareTo(bp.first.dataProducao);
+        return cmp != 0 ? cmp : a.compareTo(b);
+      });
+
+    final List<pw.Widget> conteudoPorGrupos = [];
     bool primeiroGrupo = true;
 
-    for (final lote in lotesDaParte) {
-      final producoesDoLote = [...gruposPorLote[lote]!]
+    for (final loteProd in lotesOrdenados) {
+      final producoesDoLote = gruposPorLote[loteProd]!
         ..sort((a, b) => a.dataProducao.compareTo(b.dataProducao));
 
-      if (!primeiroGrupo) conteudo.add(pw.NewPage());
+      if (!primeiroGrupo) conteudoPorGrupos.add(pw.NewPage());
       primeiroGrupo = false;
 
-      // Cabeçalho "Lote: XXX"
-      conteudo.add(
+      // Cabeçalho do grupo
+      conteudoPorGrupos.add(
         pw.Container(
           margin: const pw.EdgeInsets.only(bottom: 8),
           padding: const pw.EdgeInsets.symmetric(vertical: 6, horizontal: 8),
@@ -999,14 +1125,14 @@ class RelatoriosViewModel extends ChangeNotifier {
             color: PdfColors.grey200,
             borderRadius: pw.BorderRadius.circular(4),
           ),
-          child: pw.Text('Lote: $lote',
+          child: pw.Text('Lote: $loteProd',
               style: pw.TextStyle(font: robotoFontBold, fontSize: 11)),
         ),
       );
 
       for (final producao in producoesDoLote) {
         final formula = getFormulaPorId(producao.formulaId);
-        final List<pw.TableRow> rows = [];
+        final rows = <pw.TableRow>[];
 
         // Linha da fórmula
         rows.add(
@@ -1041,11 +1167,25 @@ class RelatoriosViewModel extends ChangeNotifier {
           ),
         );
 
-        // MPs (consumo FIFO global)
+        // Linhas das MPs consumidas
         for (final entry in producao.materiaPrimaConsumida.entries) {
-          final mp = getMateriaPrimaPorId(entry.key);
-          final qtd = entry.value;
-          final loteStr = _consumirLotes(entry.key, qtd, lotesPorMP);
+          final mpId = entry.key;
+          final materiaPrima = getMateriaPrimaPorId(mpId);
+          final quantidadeNecessaria = entry.value;
+
+          // Consumo sincronizado: só usa lotes com dataRecebimento <= dataProducao
+          final loteStr = _consumirLotesAteData(
+            mpId,
+            quantidadeNecessaria,
+            lotesPorMP,
+            producao.dataProducao,
+          );
+
+          // Se não conseguiu atender totalmente, marca (diagnóstico)
+          final atendimentoParcial = loteStr.isEmpty;
+          final textoLote = atendimentoParcial
+              ? '[sem lote elegível p/ ${quantidadeNecessaria.toStringAsFixed(2)} ${materiaPrima?.unidadeMedida ?? ''}]'
+              : loteStr;
 
           rows.add(
             pw.TableRow(
@@ -1054,7 +1194,7 @@ class RelatoriosViewModel extends ChangeNotifier {
                   padding: const pw.EdgeInsets.all(6),
                   alignment: pw.Alignment.centerLeft,
                   child: pw.Text(
-                    '  ${mp?.nome ?? 'Desconhecida'}',
+                    '  ${materiaPrima?.nome ?? 'Desconhecida'}',
                     style: pw.TextStyle(font: robotoFont, fontSize: 9),
                   ),
                 ),
@@ -1062,7 +1202,7 @@ class RelatoriosViewModel extends ChangeNotifier {
                   padding: const pw.EdgeInsets.all(6),
                   alignment: pw.Alignment.center,
                   child: pw.Text(
-                    loteStr,
+                    textoLote,
                     style: pw.TextStyle(font: robotoFont, fontSize: 9),
                   ),
                 ),
@@ -1070,7 +1210,7 @@ class RelatoriosViewModel extends ChangeNotifier {
                   padding: const pw.EdgeInsets.all(6),
                   alignment: pw.Alignment.centerRight,
                   child: pw.Text(
-                    '${qtd.toStringAsFixed(2)} ${mp?.unidadeMedida ?? ''}',
+                    '${quantidadeNecessaria.toStringAsFixed(2)} ${materiaPrima?.unidadeMedida ?? ''}',
                     style: pw.TextStyle(font: robotoFont, fontSize: 9),
                   ),
                 ),
@@ -1079,8 +1219,7 @@ class RelatoriosViewModel extends ChangeNotifier {
           );
         }
 
-        // Bloco + "Quantidade de ensaque"
-        conteudo.add(
+        conteudoPorGrupos.add(
           pw.Column(
             crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
@@ -1127,39 +1266,7 @@ class RelatoriosViewModel extends ChangeNotifier {
       }
     }
 
-    if (conteudo.isEmpty) {
-      return [
-        pw.Container(
-          padding: const pw.EdgeInsets.all(12),
-          decoration: pw.BoxDecoration(
-            color: PdfColors.red100,
-            borderRadius: pw.BorderRadius.circular(6),
-          ),
-          child: pw.Text(
-            'Nenhuma produção registrada neste período.',
-            style: pw.TextStyle(
-              font: robotoFont,
-              fontSize: 12,
-              color: PdfColors.red800,
-            ),
-          ),
-        ),
-      ];
-    }
-
-    return conteudo;
-  }
-
-  Future<Uint8List> _gerarPdfPartePersonalizado({
-    required String headerTitulo,
-    required String periodoTexto,
-    required pw.ImageProvider logo,
-    required pw.Font robotoFont,
-    required pw.Font robotoFontBold,
-    required List<pw.Widget> conteudo,
-  }) async {
-    final pdfDoc = pw.Document();
-
+    // Página com header/footer (build)
     pdfDoc.addPage(
       pw.MultiPage(
         maxPages: 100,
@@ -1167,7 +1274,7 @@ class RelatoriosViewModel extends ChangeNotifier {
           margin: pw.EdgeInsets.all(20),
           theme: pw.ThemeData.withFont(base: robotoFont, bold: robotoFontBold),
         ),
-        header: (ctx) => pw.Column(
+        header: (pw.Context context) => pw.Column(
           crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
             pw.Row(
@@ -1181,7 +1288,7 @@ class RelatoriosViewModel extends ChangeNotifier {
                 ),
                 pw.Expanded(
                   child: pw.Text(
-                    headerTitulo,
+                    'Controle de Produção Mistura/Ensaque',
                     textAlign: pw.TextAlign.left,
                     style: pw.TextStyle(
                       fontSize: 14,
@@ -1201,16 +1308,15 @@ class RelatoriosViewModel extends ChangeNotifier {
                           pw.TextSpan(
                             text: 'BPF 18',
                             style: pw.TextStyle(
-                              font: robotoFontBold,
-                              fontSize: 12,
-                            ),
+                                font: robotoFontBold, fontSize: 12),
                           ),
                         ],
                       ),
                     ),
                     pw.Text(
-                        'Data: ${DateFormat('dd/MM/yyyy').format(DateTime.now())}',
-                        style: pw.TextStyle(font: robotoFont, fontSize: 12)),
+                      'Data: 03/02/2025',
+                      style: pw.TextStyle(font: robotoFont, fontSize: 12),
+                    ),
                   ],
                 ),
               ],
@@ -1223,7 +1329,7 @@ class RelatoriosViewModel extends ChangeNotifier {
                 borderRadius: pw.BorderRadius.circular(6),
               ),
               child: pw.Text(
-                periodoTexto,
+                'Período: ${DateFormat('dd/MM/yyyy').format(dataInicio)} - ${DateFormat('dd/MM/yyyy').format(dataFim)}',
                 style: pw.TextStyle(
                   font: robotoFont,
                   fontWeight: pw.FontWeight.bold,
@@ -1235,15 +1341,14 @@ class RelatoriosViewModel extends ChangeNotifier {
             pw.Container(
               padding: const pw.EdgeInsets.only(bottom: 6),
               decoration: const pw.BoxDecoration(
-                border: pw.Border(
-                  bottom: pw.BorderSide(color: PdfColors.grey300),
-                ),
+                border:
+                    pw.Border(bottom: pw.BorderSide(color: PdfColors.grey300)),
               ),
               child: pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
                   pw.Text(
-                    'Página ${ctx.pageNumber} de ${ctx.pagesCount}',
+                    'Página ${context.pageNumber} de ${context.pagesCount}',
                     style: pw.TextStyle(
                       font: robotoFont,
                       fontSize: 8,
@@ -1263,26 +1368,23 @@ class RelatoriosViewModel extends ChangeNotifier {
                     pw.Container(
                       padding: const pw.EdgeInsets.all(6),
                       alignment: pw.Alignment.center,
-                      child: pw.Text(
-                        'Fórmula / Matéria-Prima',
-                        style: pw.TextStyle(font: robotoFontBold, fontSize: 10),
-                      ),
+                      child: pw.Text('Fórmula / Matéria-Prima',
+                          style:
+                              pw.TextStyle(font: robotoFontBold, fontSize: 10)),
                     ),
                     pw.Container(
                       padding: const pw.EdgeInsets.all(6),
                       alignment: pw.Alignment.center,
-                      child: pw.Text(
-                        'Lote',
-                        style: pw.TextStyle(font: robotoFontBold, fontSize: 10),
-                      ),
+                      child: pw.Text('Lote',
+                          style:
+                              pw.TextStyle(font: robotoFontBold, fontSize: 10)),
                     ),
                     pw.Container(
                       padding: const pw.EdgeInsets.all(6),
                       alignment: pw.Alignment.center,
-                      child: pw.Text(
-                        'Quantidade',
-                        style: pw.TextStyle(font: robotoFontBold, fontSize: 10),
-                      ),
+                      child: pw.Text('Quantidade',
+                          style:
+                              pw.TextStyle(font: robotoFontBold, fontSize: 10)),
                     ),
                   ],
                 ),
@@ -1296,7 +1398,7 @@ class RelatoriosViewModel extends ChangeNotifier {
             pw.SizedBox(height: 5),
           ],
         ),
-        footer: (ctx) => pw.Column(
+        footer: (pw.Context context) => pw.Column(
           children: [
             pw.SizedBox(height: 10),
             pw.Table(
@@ -1328,58 +1430,72 @@ class RelatoriosViewModel extends ChangeNotifier {
                     ),
                   ],
                 ),
-                // Linhas fixas (mantidas)
-                pw.TableRow(children: [
-                  pw.Container(
+                pw.TableRow(
+                  children: [
+                    pw.Container(
                       padding: const pw.EdgeInsets.all(6),
                       alignment: pw.Alignment.centerLeft,
                       child: pw.Text('Responsável: Helves P. Santos',
-                          style: pw.TextStyle(font: robotoFont, fontSize: 8))),
-                  pw.Container(
+                          style: pw.TextStyle(font: robotoFont, fontSize: 8)),
+                    ),
+                    pw.Container(
                       padding: const pw.EdgeInsets.all(6),
                       alignment: pw.Alignment.centerLeft,
                       child: pw.Text('Responsável: Pedro Luiz Ferreira',
-                          style: pw.TextStyle(font: robotoFont, fontSize: 8))),
-                  pw.Container(
+                          style: pw.TextStyle(font: robotoFont, fontSize: 8)),
+                    ),
+                    pw.Container(
                       padding: const pw.EdgeInsets.all(6),
                       alignment: pw.Alignment.centerLeft,
                       child: pw.Text('Responsável: Franciele A. Santos',
-                          style: pw.TextStyle(font: robotoFont, fontSize: 8))),
-                ]),
-                pw.TableRow(children: [
-                  pw.Container(
+                          style: pw.TextStyle(font: robotoFont, fontSize: 8)),
+                    ),
+                  ],
+                ),
+                pw.TableRow(
+                  children: [
+                    pw.Container(
                       padding: const pw.EdgeInsets.all(6),
                       alignment: pw.Alignment.centerLeft,
                       child: pw.Text('Data:',
-                          style: pw.TextStyle(font: robotoFont, fontSize: 8))),
-                  pw.Container(
+                          style: pw.TextStyle(font: robotoFont, fontSize: 8)),
+                    ),
+                    pw.Container(
                       padding: const pw.EdgeInsets.all(6),
                       alignment: pw.Alignment.centerLeft,
                       child: pw.Text('Data:',
-                          style: pw.TextStyle(font: robotoFont, fontSize: 8))),
-                  pw.Container(
+                          style: pw.TextStyle(font: robotoFont, fontSize: 8)),
+                    ),
+                    pw.Container(
                       padding: const pw.EdgeInsets.all(6),
                       alignment: pw.Alignment.centerLeft,
                       child: pw.Text('Data:',
-                          style: pw.TextStyle(font: robotoFont, fontSize: 8))),
-                ]),
-                pw.TableRow(children: [
-                  pw.Container(
+                          style: pw.TextStyle(font: robotoFont, fontSize: 8)),
+                    ),
+                  ],
+                ),
+                pw.TableRow(
+                  children: [
+                    pw.Container(
                       padding: const pw.EdgeInsets.all(6),
                       alignment: pw.Alignment.centerLeft,
                       child: pw.Text('Assinatura:',
-                          style: pw.TextStyle(font: robotoFont, fontSize: 8))),
-                  pw.Container(
+                          style: pw.TextStyle(font: robotoFont, fontSize: 8)),
+                    ),
+                    pw.Container(
                       padding: const pw.EdgeInsets.all(6),
                       alignment: pw.Alignment.centerLeft,
                       child: pw.Text('Assinatura:',
-                          style: pw.TextStyle(font: robotoFont, fontSize: 8))),
-                  pw.Container(
+                          style: pw.TextStyle(font: robotoFont, fontSize: 8)),
+                    ),
+                    pw.Container(
                       padding: const pw.EdgeInsets.all(6),
                       alignment: pw.Alignment.centerLeft,
                       child: pw.Text('Assinatura:',
-                          style: pw.TextStyle(font: robotoFont, fontSize: 8))),
-                ]),
+                          style: pw.TextStyle(font: robotoFont, fontSize: 8)),
+                    ),
+                  ],
+                ),
               ],
               columnWidths: {
                 0: pw.FlexColumnWidth(1),
@@ -1389,155 +1505,30 @@ class RelatoriosViewModel extends ChangeNotifier {
             ),
           ],
         ),
-        build: (ctx) => [...conteudo],
+        build: (_) => [
+          if (conteudoPorGrupos.isEmpty)
+            pw.Container(
+              padding: const pw.EdgeInsets.all(12),
+              decoration: pw.BoxDecoration(
+                color: PdfColors.red100,
+                borderRadius: pw.BorderRadius.circular(6),
+              ),
+              child: pw.Text(
+                'Nenhuma produção registrada neste período.',
+                style: pw.TextStyle(
+                  font: robotoFont,
+                  fontSize: 12,
+                  color: PdfColors.red800,
+                ),
+              ),
+            )
+          else
+            ...conteudoPorGrupos,
+        ],
       ),
     );
 
     return await pdfDoc.save();
-  }
-
-  Future<void> _abrirPartesNoWeb(List<Uint8List> partes) async {
-    if (partes.isEmpty) return;
-    for (int i = 0; i < partes.length; i++) {
-      await visualizarPDF(partes[i]); // já abre em nova aba
-    }
-  }
-
-  Future<Uint8List> gerarRelatorioPersonalizadoPDF(
-    DateTime dataInicio,
-    DateTime dataFim,
-  ) async {
-    // ========= CONFIG =========
-    const int maxLinhasPorParte = 300; // ajuste fino conforme seu layout
-    // =========================
-
-    // Logo
-    final logo = pw.MemoryImage(
-      (await rootBundle.load('assets/images/documento.png'))
-          .buffer
-          .asUint8List(),
-    );
-
-    // Fontes
-    Map<String, pw.Font> fonts;
-    try {
-      fonts = await _loadRobotoFonts();
-    } catch (_) {
-      fonts = {
-        'regular': pw.Font.helvetica(),
-        'bold': pw.Font.helveticaBold(),
-      };
-    }
-    final robotoFont = fonts['regular']!;
-    final robotoFontBold = fonts['bold']!;
-
-    // Filtrar produções no intervalo
-    final producoesPeriodo = _producoes
-        .where((p) =>
-            !p.dataProducao.isBefore(dataInicio) &&
-            p.dataProducao.isBefore(dataFim.add(const Duration(days: 1))))
-        .toList()
-      ..sort((a, b) => a.dataProducao.compareTo(b.dataProducao));
-
-    // FIFO global de lotes
-    final lotesPorMP = <String, List<_LoteConsumicao>>{};
-    for (var lote in _lotes) {
-      lotesPorMP.putIfAbsent(lote.materiaPrimaId, () => []);
-      lotesPorMP[lote.materiaPrimaId]!.add(_LoteConsumicao(lote));
-    }
-    for (var entrada in lotesPorMP.entries) {
-      entrada.value
-          .sort((a, b) => a.dataRecebimento.compareTo(b.dataRecebimento));
-    }
-
-    // ===== AGRUPAR POR LOTE DE PRODUÇÃO =====
-    final Map<String, List<Producao>> gruposPorLote = {};
-    for (final p in producoesPeriodo) {
-      gruposPorLote.putIfAbsent(p.loteProducao, () => []);
-      gruposPorLote[p.loteProducao]!.add(p);
-    }
-
-    // Ordenar lotes pelo timestamp da 1ª produção
-    final lotesOrdenados = gruposPorLote.keys.toList()
-      ..sort((a, b) {
-        final ap = [...gruposPorLote[a]!]
-          ..sort((x, y) => x.dataProducao.compareTo(y.dataProducao));
-        final bp = [...gruposPorLote[b]!]
-          ..sort((x, y) => x.dataProducao.compareTo(y.dataProducao));
-        final cmp = ap.first.dataProducao.compareTo(bp.first.dataProducao);
-        return cmp != 0 ? cmp : a.compareTo(b);
-      });
-
-    // ===== PACKING: montar "partes" sem quebrar lote =====
-    final List<List<String>> partesDeLotes = [];
-    List<String> atual = [];
-    int linhasAcumuladas = 0;
-
-    int _linhasDoLote(String loteKey) {
-      final producoes = gruposPorLote[loteKey]!;
-      int linhas = 0;
-      for (final p in producoes) {
-        // +1 pela linha da "fórmula/cabeçalho" + N pelas MPs +1 pela linha "Quantidade de ensaque"
-        linhas += 1 + p.materiaPrimaConsumida.length + 1;
-      }
-      // +1 para o "título do grupo Lote: XXX"
-      return linhas + 1;
-    }
-
-    for (final lote in lotesOrdenados) {
-      final linhasLote = _linhasDoLote(lote);
-
-      if (linhasAcumuladas > 0 &&
-          (linhasAcumuladas + linhasLote) > maxLinhasPorParte) {
-        partesDeLotes.add(List<String>.from(atual));
-        atual.clear();
-        linhasAcumuladas = 0;
-      }
-
-      atual.add(lote);
-      linhasAcumuladas += linhasLote;
-
-      if (linhasAcumuladas >= maxLinhasPorParte) {
-        partesDeLotes.add(List<String>.from(atual));
-        atual.clear();
-        linhasAcumuladas = 0;
-      }
-    }
-    if (atual.isNotEmpty) partesDeLotes.add(List<String>.from(atual));
-
-    // ===== GERAR PDFs PARA CADA PARTE =====
-    final List<Uint8List> bytesPartes = [];
-
-    for (int i = 0; i < partesDeLotes.length; i++) {
-      final lotesDaParte = partesDeLotes[i];
-
-      // constrói os blocos (mesma estética do seu layout atual)
-      final blocos = _construirBlocosParaLotes(
-        lotesDaParte: lotesDaParte,
-        gruposPorLote: gruposPorLote,
-        lotesPorMP: lotesPorMP,
-        robotoFont: robotoFont,
-        robotoFontBold: robotoFontBold,
-      );
-
-      final bytes = await _gerarPdfPartePersonalizado(
-        headerTitulo: 'Controle de Produção Mistura/Ensaque',
-        periodoTexto:
-            'Período: ${DateFormat('dd/MM/yyyy').format(dataInicio)} - ${DateFormat('dd/MM/yyyy').format(dataFim)}',
-        logo: logo,
-        robotoFont: robotoFont,
-        robotoFontBold: robotoFontBold,
-        conteudo: blocos,
-      );
-
-      bytesPartes.add(bytes);
-    }
-
-    // Abre todas as partes em nova aba (Web)
-    await _abrirPartesNoWeb(bytesPartes);
-
-    // Retorna a primeira parte (caso alguém use o retorno)
-    return bytesPartes.isNotEmpty ? bytesPartes.first : Uint8List(0);
   }
 
   Future<Uint8List> gerarRelatorioEstoquePDF() async {
