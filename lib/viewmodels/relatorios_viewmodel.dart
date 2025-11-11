@@ -531,7 +531,7 @@ class RelatoriosViewModel extends ChangeNotifier {
                       padding: const pw.EdgeInsets.all(6),
                       alignment: pw.Alignment.centerLeft,
                       child: pw.Text(
-                        '怨sponsável: Pedro Luiz Ferreira',
+                        'Responsável: Pedro Luiz Ferreira',
                         style: pw.TextStyle(font: robotoFont, fontSize: 8),
                       ),
                     ),
@@ -851,8 +851,7 @@ class RelatoriosViewModel extends ChangeNotifier {
                 decoration: pw.BoxDecoration(
                     color: PdfColors.grey100,
                     borderRadius: pw.BorderRadius.circular(6)),
-                child: pw.Text(
-                    'Período: ${DateFormat('dd/MM/yyyy').format(inicioSemana)} - ${DateFormat('dd/MM/yyyy').format(fimSemana)}',
+                child: pw.Text('Período:    /    /       -      /    /    ',
                     style: pw.TextStyle(
                         font: robotoFont,
                         fontWeight: pw.FontWeight.bold,
@@ -1329,7 +1328,7 @@ class RelatoriosViewModel extends ChangeNotifier {
                 borderRadius: pw.BorderRadius.circular(6),
               ),
               child: pw.Text(
-                'Período: ${DateFormat('dd/MM/yyyy').format(dataInicio)} - ${DateFormat('dd/MM/yyyy').format(dataFim)}',
+                'Período:         /         /       ',
                 style: pw.TextStyle(
                   font: robotoFont,
                   fontWeight: pw.FontWeight.bold,

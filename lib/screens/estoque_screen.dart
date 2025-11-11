@@ -400,14 +400,14 @@ class _EstoqueScreenState extends State<EstoqueScreen>
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       Text(
-                        'Quantidade Atual',
+                        'Quantidade Recebida',
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                       Text(
-                        '${lote.quantidadeAtual.toStringAsFixed(2)} ${materiaPrima.unidadeMedida}',
+                        '${lote.quantidadeRecebida.toStringAsFixed(2)} ${materiaPrima.unidadeMedida}',
                         style:
                             Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  color: lote.quantidadeAtual <= 0
+                                  color: lote.quantidadeRecebida <= 0
                                       ? AppTheme.errorColor
                                       : AppTheme.successColor,
                                   fontWeight: FontWeight.bold,
@@ -1204,14 +1204,14 @@ class _EstoqueScreenState extends State<EstoqueScreen>
                                                     ),
                                                   ),
                                                   Text(
-                                                    '${lote.quantidadeAtual.toStringAsFixed(2)} ${materiaPrima.unidadeMedida}',
+                                                    '${lote.quantidadeRecebida.toStringAsFixed(2)} ${materiaPrima.unidadeMedida}',
                                                     style: Theme.of(context)
                                                         .textTheme
                                                         .titleSmall
                                                         ?.copyWith(
                                                           fontWeight:
                                                               FontWeight.bold,
-                                                          color: lote.quantidadeAtual <=
+                                                          color: lote.quantidadeRecebida <=
                                                                   0
                                                               ? AppTheme
                                                                   .errorColor

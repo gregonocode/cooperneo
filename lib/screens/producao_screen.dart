@@ -469,14 +469,16 @@ class _ProducaoScreenState extends State<ProducaoScreen>
                     ),
                     const SizedBox(width: 12),
 
-                    // EXCLUIR (vermelho)
+                    // EXCLUIR E REVERTER ESTOQUE (vermelho)
                     Expanded(
                       child: ElevatedButton.icon(
                         onPressed: () {
                           _showDeleteConfirmationDialog(
                             context,
-                            'Excluir Produção',
-                            'Deseja realmente excluir a produção do lote "${producao.loteProducao}"? Esta ação não pode ser desfeita.',
+                            'Excluir e reverter estoque',
+                            'Esta ação vai excluir a produção do lote "${producao.loteProducao}" '
+                            'e DEVOLVER todo o consumo aos lotes e às matérias-primas. '
+                            'Tem certeza que deseja continuar?',
                             () => viewModel.excluirProducao(producao.id),
                             viewModel: viewModel,
                             entityType: 'producao',
@@ -493,11 +495,11 @@ class _ProducaoScreenState extends State<ProducaoScreen>
                     ),
                     const SizedBox(width: 12),
 
-                    // CANCELAR (neutro)
+                    // FECHAR (neutro)
                     Expanded(
                       child: OutlinedButton(
                         onPressed: () => Navigator.pop(context),
-                        child: const Text('Cancelar'),
+                        child: const Text('Fechar'),
                         style: OutlinedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 12),
                         ),

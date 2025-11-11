@@ -9,35 +9,29 @@ import '../models/movimentacao.dart';
 class SupabaseService {
   final SupabaseClient _client = Supabase.instance.client;
 
-  // Fórmulas
+  // ============================================================
+  //                      FÓRMULAS
+  // ============================================================
+
   Future<List<Formula>> fetchFormulas() async {
     try {
-      print('Buscando fórmulas no Supabase...');
       final response = await _client.from('formulas').select();
-      final formulasList =
-          response.map((item) => Formula.fromJson(item)).toList();
-      print('Fórmulas mapeadas: $formulasList');
-      return formulasList;
+      return response.map((item) => Formula.fromJson(item)).toList();
     } catch (e) {
-      print('Erro ao buscar fórmulas: $e');
       throw Exception('Erro ao buscar fórmulas: $e');
     }
   }
 
   Future<bool> addFormula(Map<String, dynamic> data) async {
     try {
-      print('Tentando inserir fórmula no Supabase: $data');
-      final user = await _client.auth.currentUser;
-      if (user == null) {
+      final user = _client.auth.currentUser;
+      if (user == null)
         throw Exception('Nenhum usuário autenticado encontrado');
-      }
       final dataWithUserId = {
         ...data,
-        'user_id': user.id, // Adiciona o ID do usuário autenticado
+        'user_id': user.id,
       };
-      print('Dados com user_id: $dataWithUserId');
       await _client.from('formulas').insert(dataWithUserId);
-      print('Fórmula inserida com sucesso no Supabase');
       return true;
     } catch (e) {
       print('Erro ao adicionar fórmula no Supabase: $e');
@@ -47,18 +41,14 @@ class SupabaseService {
 
   Future<bool> updateFormula(String id, Map<String, dynamic> data) async {
     try {
-      print('Tentando atualizar fórmula no Supabase: id=$id, data=$data');
-      final user = await _client.auth.currentUser;
-      if (user == null) {
+      final user = _client.auth.currentUser;
+      if (user == null)
         throw Exception('Nenhum usuário autenticado encontrado');
-      }
       final dataWithUserId = {
         ...data,
-        'user_id': user.id, // Garante que user_id esteja presente
+        'user_id': user.id,
       };
-      print('Dados com user_id: $dataWithUserId');
       await _client.from('formulas').update(dataWithUserId).eq('id', id);
-      print('Fórmula atualizada com sucesso no Supabase');
       return true;
     } catch (e) {
       print('Erro ao atualizar fórmula no Supabase: $e');
@@ -68,9 +58,7 @@ class SupabaseService {
 
   Future<bool> deleteFormula(int id) async {
     try {
-      print('Tentando deletar fórmula no Supabase: id=$id');
       await _client.from('formulas').delete().eq('id', id);
-      print('Fórmula deletada com sucesso no Supabase');
       return true;
     } catch (e) {
       print('Erro ao deletar fórmula no Supabase: $e');
@@ -78,21 +66,21 @@ class SupabaseService {
     }
   }
 
-  // Produções
+  // ============================================================
+  //                      PRODUÇÕES
+  // ============================================================
+
   Future<List<Producao>> getProducoes() async {
     try {
-      print('Buscando produções no Supabase...');
       final response = await _client.from('producoes').select();
       final data = response as List<dynamic>? ?? [];
-      print('Dados brutos das produções: $data');
 
       final producoesList = data.map((item) {
         final map = item as Map<String, dynamic>;
         try {
           return Producao.fromJson(map);
         } catch (e) {
-          print('Erro ao mapear produção: $map, erro: $e');
-          // Retorna um objeto padrão para não interromper o carregamento
+          // fallback para não quebrar carregamento
           return Producao(
             id: map['id']?.toString() ??
                 'desconhecido_${DateTime.now().millisecondsSinceEpoch}',
@@ -102,18 +90,17 @@ class SupabaseService {
             loteProducao: map['lote_producao']?.toString() ?? 'Desconhecido',
             materiaPrimaConsumida:
                 (map['materia_prima_consumida'] as Map<String, dynamic>? ?? {})
-                    .map((key, value) => MapEntry(
-                        key.toString(), (value as num?)?.toDouble() ?? 0.0)),
+                    .map((k, v) =>
+                        MapEntry(k.toString(), (v as num?)?.toDouble() ?? 0.0)),
             dataProducao:
                 DateTime.tryParse(map['data_producao']?.toString() ?? '') ??
                     DateTime.now(),
           );
         }
       }).toList();
-      print('Produções mapeadas: $producoesList');
+
       return producoesList;
     } catch (e) {
-      print('Erro ao buscar produções: $e');
       throw Exception('Erro ao buscar produções: $e');
     }
   }
@@ -126,16 +113,14 @@ class SupabaseService {
         return false;
       }
       final data = {
-        'formula_id': producao.formulaId,
+        'formula_id': int.tryParse(producao.formulaId) ?? producao.formulaId,
         'quantidade_produzida': producao.quantidadeProduzida,
         'data_producao': producao.dataProducao.toIso8601String(),
-        'lote_producao': producao.loteProducao, // Inclui lote_producao
+        'lote_producao': producao.loteProducao,
         'materia_prima_consumida': producao.materiaPrimaConsumida,
-        'user_id': user.id, // Adiciona o user_id
+        'user_id': user.id,
       };
-      print('Tentando salvar produção no Supabase: $data');
       await _client.from('producoes').insert(data);
-      print('Produção salva com sucesso no Supabase');
       return true;
     } catch (e) {
       print('Erro ao salvar produção no Supabase: $e');
@@ -143,11 +128,37 @@ class SupabaseService {
     }
   }
 
+  /// NOVO: salva produção e retorna o ID gerado (usado pela lógica de consumo por lote)
+  Future<String?> saveProducaoReturningId(Producao producao) async {
+    try {
+      final user = _client.auth.currentUser;
+      if (user == null) {
+        print('Erro: Nenhum usuário autenticado encontrado');
+        return null;
+      }
+      final data = {
+        'formula_id': int.tryParse(producao.formulaId) ?? producao.formulaId,
+        'quantidade_produzida': producao.quantidadeProduzida,
+        'data_producao': producao.dataProducao.toIso8601String(),
+        'lote_producao': producao.loteProducao,
+        'materia_prima_consumida': producao.materiaPrimaConsumida,
+        'user_id': user.id,
+      };
+
+      final inserted =
+          await _client.from('producoes').insert(data).select('id').single();
+
+      final dynamic id = inserted['id'];
+      return id == null ? null : id.toString();
+    } catch (e) {
+      print('Erro ao salvar produção (retornando id): $e');
+      return null;
+    }
+  }
+
   Future<bool> updateProducao(String id, Map<String, dynamic> data) async {
     try {
-      print('Atualizando produção $id com dados: $data');
       await _client.from('producoes').update(data).eq('id', id);
-      print('Produção atualizada com sucesso no Supabase');
       return true;
     } catch (e) {
       print('Erro ao atualizar produção no Supabase: $e');
@@ -157,9 +168,7 @@ class SupabaseService {
 
   Future<bool> deleteProducao(String id) async {
     try {
-      print('Tentando deletar produção no Supabase: id=$id');
       await _client.from('producoes').delete().eq('id', id);
-      print('Produção deletada com sucesso no Supabase');
       return true;
     } catch (e) {
       print('Erro ao deletar produção no Supabase: $e');
@@ -167,7 +176,35 @@ class SupabaseService {
     }
   }
 
-  // Matérias-primas
+  /// Excluir TODAS as produções (usado no botão de "excluir todas")
+  Future<bool> deleteAllProducoes() async {
+    try {
+      await _client.from('producoes').delete();
+      return true;
+    } catch (e) {
+      print('Erro ao excluir todas as produções: $e');
+      return false;
+    }
+  }
+
+  /// Reverte o consumo (lotes + estoque agregado) e exclui a produção via RPC atômica.
+  Future<bool> revertAndDeleteProducao(int producaoId) async {
+    try {
+      final res = await _client.rpc(
+        'reverter_e_excluir_producao',
+        params: {'p_producao_id': producaoId},
+      );
+      return (res as bool?) ?? false;
+    } catch (e) {
+      print('Erro ao reverter/excluir produção via RPC: $e');
+      return false;
+    }
+  }
+
+  // ============================================================
+  //                    MATÉRIAS-PRIMAS
+  // ============================================================
+
   Future<List<MateriaPrima>> fetchMateriasPrimas() async {
     try {
       final response = await _client.from('materias_primas').select();
@@ -205,7 +242,10 @@ class SupabaseService {
     }
   }
 
-  // Fornecedores
+  // ============================================================
+  //                      FORNECEDORES
+  // ============================================================
+
   Future<List<Fornecedor>> fetchFornecedores() async {
     try {
       final response = await _client.from('fornecedores').select();
@@ -217,21 +257,28 @@ class SupabaseService {
 
   Future<bool> addFornecedor(Map<String, dynamic> data) async {
     try {
-      print('Tentando inserir fornecedor no Supabase: $data');
-      final user = await _client.auth.currentUser;
-      if (user == null) {
+      final user = _client.auth.currentUser;
+      if (user == null)
         throw Exception('Nenhum usuário autenticado encontrado');
-      }
       final dataWithUserId = {
         ...data,
-        'user_id': user.id, // Adiciona o ID do usuário autenticado
+        'user_id': user.id,
       };
-      print('Dados com user_id: $dataWithUserId');
       await _client.from('fornecedores').insert(dataWithUserId);
-      print('For-bloodcedor inserido com sucesso no Supabase');
       return true;
     } catch (e) {
       print('Erro ao adicionar fornecedor no Supabase: $e');
+      return false;
+    }
+  }
+
+  /// NOVO: correção para atualizar fornecedor (antes chamava addFornecedor por engano)
+  Future<bool> updateFornecedor(int id, Map<String, dynamic> data) async {
+    try {
+      await _client.from('fornecedores').update(data).eq('id', id);
+      return true;
+    } catch (e) {
+      print('Erro ao atualizar fornecedor: $e');
       return false;
     }
   }
@@ -245,19 +292,47 @@ class SupabaseService {
     }
   }
 
-  // buscar Lotes mais recentes
+  // ============================================================
+  //                          LOTES
+  // ============================================================
+
+  /// Busca geral (você já usava) – mantido: mais novos primeiro
   Future<List<Lote>> fetchLotes() async {
     try {
       final response = await _client
           .from('lotes')
           .select()
-          // ordena pelo campo data_recebimento do mais novo para o mais antigo
           .order('data_recebimento', ascending: false);
       return (response as List)
           .map((item) => Lote.fromJson(item as Map<String, dynamic>))
           .toList();
     } catch (e) {
       throw Exception('Erro ao buscar lotes: $e');
+    }
+  }
+
+  /// NOVO: busca lotes de uma matéria-prima específica (o VM filtra/ordena)
+  Future<List<Map<String, dynamic>>> fetchLotesByMateriaPrima(
+      String materiaPrimaId) async {
+    try {
+      final query = _client.from('lotes').select();
+
+      // Se o ID for numérico, filtra como int; se não, filtra como string (para UUID etc.)
+      final intId = int.tryParse(materiaPrimaId);
+      final filtered = intId != null
+          ? query.eq('materia_prima_id', intId)
+          : query.eq('materia_prima_id', materiaPrimaId);
+
+      // FIFO natural: mais antigo primeiro
+      final resp = await filtered.order('data_recebimento', ascending: true);
+
+      // Garante tipagem segura
+      if (resp is List) {
+        return resp.cast<Map<String, dynamic>>();
+      }
+      return const <Map<String, dynamic>>[];
+    } catch (e) {
+      throw Exception('Erro ao buscar lotes por MP ($materiaPrimaId): $e');
     }
   }
 
@@ -270,25 +345,12 @@ class SupabaseService {
       }
       final dataWithUserId = {
         ...data,
-        'user_id': user.id, // Adiciona o user_id do usuário autenticado
+        'user_id': user.id,
       };
       await _client.from('lotes').insert(dataWithUserId);
       return true;
     } catch (e) {
       print('Erro ao adicionar lote no Supabase: $e');
-      return false;
-    }
-  }
-
-  // Excluir TODAS as produções
-  Future<bool> deleteAllProducoes() async {
-    try {
-      print('Excluindo todas as produções no Supabase...');
-      await _client.from('producoes').delete();
-      print('Todas as produções foram excluídas com sucesso!');
-      return true;
-    } catch (e) {
-      print('Erro ao excluir todas as produções: $e');
       return false;
     }
   }
@@ -311,7 +373,43 @@ class SupabaseService {
     }
   }
 
-  // Movimentações
+  /// NOVO: debita saldo do lote (versão simples; para produção real, prefira RPC atômica)
+  // Versão ATÔMICA via RPC (recomendado)
+  Future<bool> debitarSaldoDoLote(
+      {required int loteId, required double quantidade}) async {
+    try {
+      final res = await _client.rpc('debitar_saldo_lote', params: {
+        'p_lote_id': loteId,
+        'p_quantidade': quantidade,
+      });
+      // Supabase retorna bool (true/false)
+      return (res as bool?) ?? false;
+    } catch (e) {
+      print('Erro RPC debitar_saldo_lote: $e');
+      return false;
+    }
+  }
+
+  // ============================================================
+  //                     PRODUÇÃO_CONSUMOS (por lote)
+  // ============================================================
+
+  /// NOVO: insere o detalhamento de consumo por lote
+  /// Espera: { producao_id, materia_prima_id, lote_id, quantidade }
+  Future<bool> insertProducaoConsumo(Map<String, dynamic> data) async {
+    try {
+      await _client.from('producao_consumos').insert(data);
+      return true;
+    } catch (e) {
+      print('Erro ao inserir producao_consumo: $e');
+      return false;
+    }
+  }
+
+  // ============================================================
+  //                     MOVIMENTAÇÕES
+  // ============================================================
+
   Future<List<Movimentacao>> fetchMovimentacoes() async {
     try {
       final response = await _client.from('movimentacoes').select();

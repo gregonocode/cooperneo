@@ -1,14 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:collection/collection.dart';
+
 import '../models/materia_prima.dart';
 import '../models/formula.dart';
 import '../models/producao.dart';
 import '../models/componente_formula.dart';
 import '../services/supabase_service.dart';
-import 'package:collection/collection.dart';
+
+// usa o LoteVM e a enum LoteStrategy que você colocou em lib/models/lote_vm.dart
+import '../models/lote_vm.dart';
 
 class ProducaoViewModel extends ChangeNotifier {
   final SupabaseService _supabaseService;
 
+  // ---------- Estado ----------
   List<MateriaPrima> _materiasPrimas = [];
   List<Formula> _formulas = [];
   List<Producao> _producoes = [];
@@ -16,6 +21,10 @@ class ProducaoViewModel extends ChangeNotifier {
   bool _isLoading = false;
   String? _errorMessage;
 
+  // Estratégia atual (altere aqui se quiser LIFO/FEFO)
+  final LoteStrategy _loteStrategy = LoteStrategy.fifo;
+
+  // ---------- Getters ----------
   List<MateriaPrima> get materiasPrimas => _materiasPrimas;
   List<Formula> get formulas => _formulas;
   List<Producao> get producoes => _producoes;
@@ -69,6 +78,7 @@ class ProducaoViewModel extends ChangeNotifier {
     return _materiasPrimas.firstWhereOrNull((mp) => mp.id == id);
   }
 
+  // ---------- Simulação de disponibilidade no modal ----------
   Map<String, double> verificarDisponibilidadeProducao(
       String formulaId, double quantidadeProduzida) {
     final formula = getFormulaPorId(formulaId);
@@ -104,6 +114,7 @@ class ProducaoViewModel extends ChangeNotifier {
     return disponibilidade;
   }
 
+  // ---------- CRUD de Fórmulas ----------
   Future<bool> adicionarFormula({
     required String nome,
     required List<ComponenteFormula> componentes,
@@ -172,9 +183,107 @@ class ProducaoViewModel extends ChangeNotifier {
     }
   }
 
-  // ---------- Produção: criar ----------
+  // ============================================================
+  //                       LÓGICA DE LOTES
+  // ============================================================
+
+  /// Busca lotes de uma MP diretamente do serviço e mapeia para LoteVM (sem nulos).
+  Future<List<LoteVM>> _fetchLotesDaMP(String materiaPrimaId) async {
+    final rows =
+        await _supabaseService.fetchLotesByMateriaPrima(materiaPrimaId);
+
+    return rows.map<LoteVM>((raw) {
+      final id = (raw['id'] ?? '').toString();
+      final mpId = (raw['materia_prima_id'] ?? '').toString();
+      final numero = (raw['numero_lote'] ?? '').toString();
+
+      final drStr = (raw['data_recebimento'] ?? '').toString();
+      final dataRec = DateTime.tryParse(drStr) ?? DateTime(1970, 1, 1);
+
+      final dvStr = raw['data_validade']?.toString();
+      final dataVal =
+          (dvStr == null || dvStr.isEmpty) ? null : DateTime.tryParse(dvStr);
+
+      final qtd = (raw['quantidade_atual'] as num?)?.toDouble() ?? 0.0;
+      final ativo = (raw['ativo'] as bool?) ?? true;
+
+      return LoteVM(
+        id: id,
+        materiaPrimaId: mpId,
+        numeroLote: numero,
+        dataRecebimento: dataRec,
+        dataValidade: dataVal,
+        quantidadeAtual: qtd,
+        ativo: ativo,
+      );
+    }).toList();
+  }
+
+  /// Seleciona/consome por lote conforme a estratégia, retornando
+  /// { loteId : quantidadeConsumida }. Consumo em cascata até cobrir 'quantidadeNecessaria'.
+  Map<String, double> _consumirPorLotes({
+    required List<LoteVM> lotes,
+    required double quantidadeNecessaria,
+    required LoteStrategy strategy,
+    DateTime? agora,
+  }) {
+    double restante = quantidadeNecessaria;
+    final Map<String, double> consumoPorLoteId = {};
+    final now = agora ?? DateTime.now();
+
+    // Filtra elegíveis
+    final elegiveis = lotes.where((l) {
+      final saldoOk = l.quantidadeAtual > 0;
+      final ativoOk = l.ativo;
+      final validadeOk = l.dataValidade == null || l.dataValidade!.isAfter(now);
+      return saldoOk && ativoOk && validadeOk;
+    }).toList();
+
+    // Ordena conforme a estratégia
+    elegiveis.sort((a, b) {
+      switch (strategy) {
+        case LoteStrategy.fefo:
+          final av = a.dataValidade ?? a.dataRecebimento;
+          final bv = b.dataValidade ?? b.dataRecebimento;
+          final cmp = av.compareTo(bv); // vence primeiro
+          return (cmp != 0) ? cmp : a.id.compareTo(b.id);
+        case LoteStrategy.lifo:
+          final cmp =
+              b.dataRecebimento.compareTo(a.dataRecebimento); // mais novo 1º
+          return (cmp != 0) ? cmp : a.id.compareTo(b.id);
+        case LoteStrategy.fifo:
+        default:
+          final cmp =
+              a.dataRecebimento.compareTo(b.dataRecebimento); // mais antigo 1º
+          return (cmp != 0) ? cmp : a.id.compareTo(b.id);
+      }
+    });
+
+    // Consumo em cascata
+    for (final lote in elegiveis) {
+      if (restante <= 0) break;
+      final disponivel = lote.quantidadeAtual;
+      final consumir = disponivel >= restante ? restante : disponivel;
+      if (consumir > 0) {
+        consumoPorLoteId[lote.id] = (consumoPorLoteId[lote.id] ?? 0) + consumir;
+        lote.quantidadeAtual = disponivel - consumir; // debita em memória
+        restante -= consumir;
+      }
+    }
+
+    return consumoPorLoteId; // se sobrar restante > 0, faltou estoque por lote
+  }
+
+  // ============================================================
+  //                          PRODUÇÃO
+  // ============================================================
+
+  /// Registrar produção **com seleção e consumo por LOTE** (FIFO/LIFO/FEFO).
   Future<bool> registrarProducao(
-      String formulaId, double quantidadeProduzida, String loteProducao) async {
+    String formulaId,
+    double quantidadeProduzida,
+    String loteProducao,
+  ) async {
     try {
       await carregarDados();
 
@@ -183,65 +292,114 @@ class ProducaoViewModel extends ChangeNotifier {
         throw Exception('Fórmula não encontrada: $formulaId');
       }
 
-      // Calcula consumo e valida estoque
-      final Map<String, double> materiaPrimaConsumida = {};
-      for (final componente in formula.componentes) {
-        final mp = getMateriaPrimaPorId(componente.materiaPrimaId);
-        if (mp == null) {
+      // 1) Consumo necessário por MP (com conversão de unidade)
+      final Map<String, double> consumoNecessarioPorMP =
+          _calcularConsumoPorMateriaPrima(formulaId, quantidadeProduzida);
+
+      // 2) Selecionar/consumir por LOTE para cada MP
+      // Detalhe para persistência: { mpId: { loteId: qtd } }
+      final Map<String, Map<String, double>> detalheConsumoPorMP = {};
+      // Agregado por MP (mantém compatibilidade com seu modelo Producao)
+      final Map<String, double> agregadoPorMP = {};
+
+      for (final entry in consumoNecessarioPorMP.entries) {
+        final mpId = entry.key;
+        final qtdNec = entry.value;
+
+        // Busca lotes da MP
+        final lotes = await _fetchLotesDaMP(mpId);
+
+        // Consome conforme estratégia (padrão FIFO)
+        final consumoPorLote = _consumirPorLotes(
+          lotes: lotes,
+          quantidadeNecessaria: qtdNec,
+          strategy: _loteStrategy,
+        );
+
+        final consumido =
+            consumoPorLote.values.fold<double>(0, (a, b) => a + b);
+        if (consumido + 1e-6 < qtdNec) {
           throw Exception(
-              'Matéria-prima não encontrada: ${componente.materiaPrimaId}');
+              'Estoque por lote insuficiente para a MP $mpId (necessário $qtdNec, disponível $consumido).');
         }
 
-        double qtd = componente.quantidade * quantidadeProduzida;
-        if (componente.unidadeMedida == 'g' && mp.unidadeMedida == 'kg') {
-          qtd /= 1000;
-        } else if (componente.unidadeMedida == 'kg' &&
-            mp.unidadeMedida == 'g') {
-          qtd *= 1000;
-        } else if (componente.unidadeMedida == 'mL' &&
-            mp.unidadeMedida == 'L') {
-          qtd /= 1000;
-        } else if (componente.unidadeMedida == 'L' &&
-            mp.unidadeMedida == 'mL') {
-          qtd *= 1000;
-        }
-
-        if (mp.estoqueAtual < qtd) {
-          throw Exception(
-              'Estoque insuficiente para ${mp.nome}: ${mp.estoqueAtual} < $qtd');
-        }
-
-        materiaPrimaConsumida[mp.id] = qtd;
+        detalheConsumoPorMP[mpId] = consumoPorLote;
+        agregadoPorMP[mpId] = consumido;
       }
 
-      // Abate estoque
-      for (final e in materiaPrimaConsumida.entries) {
-        final mp = _materiasPrimas.firstWhere(
-          (m) => m.id == e.key,
-          orElse: () => throw Exception(
-              'MP não encontrada ao atualizar estoque: ${e.key}'),
-        );
-        await _supabaseService.updateMateriaPrima(
-          int.parse(mp.id),
-          {'estoque_atual': mp.estoqueAtual - e.value},
-        );
-      }
-
-      // Persiste produção
-      final producao = Producao(
+      // 3) Persistir produção e consumos por lote (ideal: transação/RPC no Postgres)
+      // 3.1) Salva a produção (precisamos do id gerado)
+      String? producaoId =
+          await _supabaseService.saveProducaoReturningId(Producao(
         id: '',
         formulaId: formulaId,
         quantidadeProduzida: quantidadeProduzida,
         loteProducao: loteProducao,
-        materiaPrimaConsumida: materiaPrimaConsumida,
+        materiaPrimaConsumida: agregadoPorMP,
         dataProducao: DateTime.now(),
-      );
+      ));
 
-      final ok = await _supabaseService.saveProducao(producao);
-      if (!ok) {
-        _errorMessage = 'Erro ao salvar produção no Supabase';
+      if (producaoId == null || producaoId.isEmpty) {
+        _errorMessage = 'Erro ao salvar produção (id não retornado)';
         notifyListeners();
         return false;
+      }
+
+      // 3.2) Insere CONSUMO por LOTE
+      for (final mpEntry in detalheConsumoPorMP.entries) {
+        final mpId = mpEntry.key;
+        for (final loteEntry in mpEntry.value.entries) {
+          final loteId = loteEntry.key;
+          final qtd = loteEntry.value;
+
+          final okItem = await _supabaseService.insertProducaoConsumo({
+            'producao_id': int.parse(producaoId),
+            'materia_prima_id': int.parse(mpId),
+            'lote_id': int.parse(loteId),
+            'quantidade': qtd,
+          });
+          if (!okItem) {
+            _errorMessage =
+                'Erro ao salvar consumo por lote (MP $mpId, lote $loteId)';
+            notifyListeners();
+            return false;
+          }
+        }
+      }
+
+      // 3.3) Debita saldo de CADA LOTE consumido
+      for (final mpEntry in detalheConsumoPorMP.entries) {
+        for (final loteEntry in mpEntry.value.entries) {
+          final loteId = loteEntry.key;
+          final qtd = loteEntry.value;
+
+          final okLote = await _supabaseService.debitarSaldoDoLote(
+            loteId: int.parse(loteId),
+            quantidade: qtd,
+          );
+          if (!okLote) {
+            _errorMessage = 'Erro ao debitar saldo do lote $loteId';
+            notifyListeners();
+            return false;
+          }
+        }
+      }
+
+      // (Opcional) 3.4) Atualiza estoque agregado da MP
+      for (final mpEntry in agregadoPorMP.entries) {
+        final mp = getMateriaPrimaPorId(mpEntry.key);
+        if (mp == null) continue;
+
+        final novoSaldo = mp.estoqueAtual - mpEntry.value;
+        final okMP = await _supabaseService.updateMateriaPrima(
+          int.parse(mp.id),
+          {'estoque_atual': novoSaldo},
+        );
+        if (!okMP) {
+          _errorMessage = 'Erro ao atualizar estoque agregado de ${mp.nome}';
+          notifyListeners();
+          return false;
+        }
       }
 
       await carregarDados();
@@ -287,7 +445,7 @@ class ProducaoViewModel extends ChangeNotifier {
     return consumo;
   }
 
-  // ---------- Produção: atualizar com delta de estoque ----------
+  // ---------- Produção: atualizar (mantém lógica antiga por MP) ----------
   Future<bool> atualizarProducao({
     required String id,
     required String formulaId,
@@ -307,14 +465,14 @@ class ProducaoViewModel extends ChangeNotifier {
       final Map<String, double> consumoAntigo =
           Map<String, double>.from(producaoAntiga.materiaPrimaConsumida);
 
-      // Recalcula consumo novo
+      // Recalcula consumo novo (agregado por MP)
       final Map<String, double> consumoNovo =
           _calcularConsumoPorMateriaPrima(formulaId, quantidadeProduzida);
 
       // Deltas (novo - antigo)
       final Set<String> todasMPs = {...consumoAntigo.keys, ...consumoNovo.keys};
 
-      // Validação: para deltas positivos precisa ter estoque
+      // Validação: para deltas positivos precisa ter estoque agregado
       for (final mpId in todasMPs) {
         final mp = getMateriaPrimaPorId(mpId);
         if (mp == null) continue;
@@ -330,7 +488,7 @@ class ProducaoViewModel extends ChangeNotifier {
         }
       }
 
-      // Aplica deltas ao estoque (delta>0 consome; delta<0 devolve)
+      // Aplica deltas ao estoque agregado (delta>0 consome; delta<0 devolve)
       for (final mpId in todasMPs) {
         final mp = getMateriaPrimaPorId(mpId);
         if (mp == null) continue;
@@ -374,39 +532,22 @@ class ProducaoViewModel extends ChangeNotifier {
     }
   }
 
-  // ---------- Produção: excluir (reverte estoque) ----------
+  /// Exclui produção revertendo todo impacto no estoque (lotes + MPs).
+  /// Usa a RPC reverter_e_excluir_producao.
   Future<bool> excluirProducao(String id) async {
     try {
-      final producao = _producoes.firstWhereOrNull((p) => p.id == id);
-      if (producao == null) {
-        _errorMessage = 'Produção não encontrada: $id';
+      final producaoIdInt = int.tryParse(id);
+      if (producaoIdInt == null) {
+        _errorMessage = 'ID de produção inválido: $id';
         notifyListeners();
         return false;
       }
 
-      // Devolve estoque consumido
-      for (final entry in producao.materiaPrimaConsumida.entries) {
-        final mpId = entry.key;
-        final qtd = entry.value;
+      final ok = await _supabaseService.revertAndDeleteProducao(producaoIdInt);
 
-        final mp = _materiasPrimas.firstWhereOrNull((m) => m.id == mpId);
-        if (mp == null) continue;
-
-        final ok = await _supabaseService.updateMateriaPrima(
-          int.parse(mpId),
-          {'estoque_atual': mp.estoqueAtual + qtd},
-        );
-        if (!ok) {
-          _errorMessage = 'Erro ao reverter estoque para ${mp.nome}';
-          notifyListeners();
-          return false;
-        }
-      }
-
-      // Remove a produção
-      final okDelete = await _supabaseService.deleteProducao(id);
-      if (!okDelete) {
-        _errorMessage = 'Erro ao excluir produção no Supabase';
+      if (!ok) {
+        _errorMessage =
+            'Erro ao reverter e excluir produção no Supabase';
         notifyListeners();
         return false;
       }
@@ -424,11 +565,18 @@ class ProducaoViewModel extends ChangeNotifier {
 
   Future<bool> excluirTodasProducoes() async {
     try {
-      final result = await _supabaseService.deleteAllProducoes();
-      if (result) {
-        await carregarDados();
+      await carregarDados();
+      final producoesAtuais = List<Producao>.from(_producoes);
+
+      for (final producao in producoesAtuais) {
+        final ok = await excluirProducao(producao.id);
+        if (!ok) {
+          return false;
+        }
       }
-      return result;
+
+      await carregarDados();
+      return true;
     } catch (e) {
       _errorMessage = 'Erro ao excluir todas as produções: $e';
       return false;
